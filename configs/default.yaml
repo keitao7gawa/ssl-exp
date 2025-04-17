@@ -1,0 +1,51 @@
+# データセット設定
+dataset:
+  name: CIFAR10
+  root: ./data
+  download: true
+  train_transform:
+    name: SimCLRTransform
+
+# 学習設定
+training:
+  # 出力設定
+  output_dir: runs
+  experiment_name: simclr
+  save_frequency: 1  # チェックポイントの保存頻度（エポック）
+  save_best_only: true  # 最良のモデルのみを保存
+  
+  # データローダー設定
+  batch_size: 256  # SimCLRでは大きなバッチサイズが重要
+  num_workers: 4
+  pin_memory: true
+  drop_last: true
+  
+  # 学習設定
+  epochs: 300  # SimCLRではより長い学習が必要
+  device: cuda
+  seed: 42
+  amp: true  # Automatic Mixed Precision
+  
+  # 最適化アルゴリズム設定
+  optimizer:
+    name: LARS  # SimCLRではLARSが推奨
+    params:
+      lr: 0.3
+      weight_decay: 1e-6
+      momentum: 0.9
+      eta: 0.001
+      trust_coef: 0.001
+  
+  # 学習率スケジューラ設定
+  scheduler:
+    name: CosineAnnealingLR
+    params:
+      T_max: 200
+      eta_min: 0.0
+  
+# モデル設定
+model:
+  name: resnet18
+  temperature: 0.07  # SimCLRの温度パラメータ
+  projection_dim: 128  # 投影ヘッドの出力次元
+  hidden_dim: 512  # 投影ヘッドの中間層の次元

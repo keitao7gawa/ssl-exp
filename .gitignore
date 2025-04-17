@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+data/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+!notebooks/visualize_transforms.ipynb
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project specific
+runs/
+*.log
+*.csv
+*.pth
+*.pt
+*.onnx
+*.pb
+
+# OS
+.DS_Store
+Thumbs.db 
+
+# config
+configs/*
+!configs/default.yaml

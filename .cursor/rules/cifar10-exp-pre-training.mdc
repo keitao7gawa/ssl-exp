@@ -1,0 +1,130 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# SimCLR事前学習プロジェクトルール
+
+## プロジェクト概要
+- 目的：SimCLRフレームワークを用いた自己教師あり学習の実装
+- 主な焦点：対照学習によるCIFAR-10データセットの表現学習
+- フレームワーク：PyTorch 2.5.1
+
+## 技術スタック
+- 言語：Python 3.9
+- フレームワーク：PyTorch 2.5.1
+- 主要ライブラリ：
+  - torchvision 0.20.1
+  - torchmetrics 1.3.1
+  - pytorch-lightning 2.2.1
+  - omegaconf 2.3.0
+  - scikit-learn 1.6.1
+  - pandas 2.2.3
+  - matplotlib 3.9.2
+  - seaborn 0.13.2
+
+## 環境設定
+- Anaconda環境：`sslexp`（推奨）
+- CUDAバージョン：11.8
+- チャンネル：
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+
+## プロジェクト構造
+project/
+├── configs/
+│ ├── default_pretrain.yaml # デフォルト設定 (事前学習用)
+│ └── simclr_pretrain.yaml # SimCLR事前学習設定
+├── src/
+│ ├── models/
+│ │ ├── resnet.py # ResNetベースエンコーダー
+│ │ └── simclr.py # SimCLRモデル定義
+│ ├── utils/
+│ │ ├── simclr_transforms.py # データ拡張
+│ │ ├── losses.py # NT-Xentロス
+│ │ └── metrics.py # 評価指標
+│ ├── dataset.py # データセット定義
+│ └── train_simclr.py # 事前学習スクリプト
+├── notebooks/ # 分析用ノートブック
+├── runs/ # 実験結果・ログ
+└── data/ # データセット保存ディレクトリ
+
+## コーディング規約
+1. 命名規則
+   - クラス：PascalCase（例：`SimCLRModel`）
+   - 関数・変数：snake_case（例：`compute_loss`）
+   - 定数：UPPER_SNAKE_CASE（例：`TEMPERATURE`）
+
+2. ドキュメント
+   - すべての主要クラス・関数にdocstringを記述
+   - 複雑なロジックには日本語コメントを追加
+
+3. 型ヒント
+   - すべての関数に型ヒントを記述
+   - `from typing import *`を活用
+
+## 実装上の注意点
+
+### モデル実装
+1. エンコーダー
+   - ResNet18をベースに実装
+   - バッチ正規化の動作に注意（`track_running_stats=True`）
+   - 出力次元は射影ヘッド入力に合わせる
+
+2. 射影ヘッド
+   - 2層MLP（dim → 512 → 128）
+   - 中間層にReLU活性化関数
+   - 最終層の正規化を忘れずに実装
+
+### データ拡張
+1. 基本変換
+   - RandomResizedCrop（サイズ32）
+   - RandomHorizontalFlip
+   - ColorJitter
+   - RandomGrayscale
+   - Normalize（CIFAR-10の統計値使用）
+
+2. 実装注意点
+   - 同一画像に異なる拡張を適用
+   - バッチ内での正例ペア生成を効率化
+   - メモリ使用量に注意
+
+### 訓練設定
+1. ハイパーパラメータ
+   - バッチサイズ：512以上
+   - 学習率：0.05（cosine decay）
+   - 温度パラメータ：0.5
+   - エポック数：200以上
+
+2. 最適化
+   - SGD with momentum（0.9）
+   - weight decay：1e-4
+   - 勾配クリッピング実装
+
+## 実験管理
+1. 設定ファイル
+   - すべての実験パラメータはYAMLで管理
+   - wandbと連携して実験追跡
+
+2. ログ管理
+   - 損失値：各イテレーション
+   - メトリクス：エポックごと
+   - モデルチェックポイント：定期保存
+
+3. 評価指標
+   - NT-Xentロス
+   - 表現の類似度マトリックス
+   - 線形評価プロトコル
+
+## 開発フロー
+1. 機能実装
+   - テスト駆動開発推奨
+   - PRベースの開発
+   - コードレビュー必須
+
+2. 実験実行
+   - 設定ファイルの変更をコミット
+   - 実験結果をwandbに記録
+   - 重要な知見をREADMEに追記
