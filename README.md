@@ -74,3 +74,29 @@ python src/train.py --resume runs/experiment_name/checkpoints/latest.pth
    - 開発ツール（black，flake8，mypy）を含む
 
 必要に応じて適切な環境設定ファイルを選択してください．また，CUDAバージョンなどのプラットフォーム固有の設定は，環境に合わせて調整してください．
+
+## Macユーザー向けの注意点
+
+Macで実行する場合は，以下の設定が必要です：
+
+1. 環境設定ファイルの修正：
+   - `environment_cross_platform.yml`のCUDA関連パッケージをコメントアウト
+   ```yaml
+   # PyTorch関連（プラットフォーム依存）
+   - pytorch=2.5.1
+   - torchvision=0.20.1
+   - torchaudio=2.5.1
+   # - pytorch-cuda=11.8  # Macでは不要
+   ```
+
+2. 設定ファイルの修正：
+   - `configs/default.yaml`のデバイス設定を変更
+   ```yaml
+   training:
+     device: mps  # Apple Siliconの場合は'mps'，Intel Macの場合は'cpu'
+   ```
+
+3. 注意事項：
+   - Apple Silicon（M1/M2/M3）搭載Macの場合は`mps`デバイスを使用
+   - Intel Macの場合は`cpu`デバイスを使用
+   - 学習速度はGPU環境と比較して遅くなる可能性があります
