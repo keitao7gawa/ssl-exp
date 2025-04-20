@@ -109,7 +109,7 @@ class SimCLRWrapper(BaseWrapper):
     """SimCLR用のモデルラッパー
     
     SimCLRの訓練に特化したラッパークラス．
-    NT-Xentロスを使用し，2つの拡張画像を処理します．
+    NT-Xentロスを使用し，複数の拡張画像を処理します．
     
     Attributes:
         model (nn.Module): ベースとなるモデル
@@ -145,11 +145,11 @@ class SimCLRWrapper(BaseWrapper):
         )
         self.temperature = temperature
         
-    def training_step(self, batch: Tuple[torch.Tensor, torch.Tensor], device: str) -> Dict[str, float]:
+    def training_step(self, batch: Tuple[torch.Tensor, ...], device: str) -> Dict[str, float]:
         """SimCLRの学習ステップ
         
         Args:
-            batch (Tuple[torch.Tensor, torch.Tensor]): 2つの拡張画像のバッチ
+            batch (Tuple[torch.Tensor, ...]): 拡張画像のバッチ
             device (str): 使用デバイス
             
         Returns:
@@ -157,13 +157,12 @@ class SimCLRWrapper(BaseWrapper):
         """
         self.train()
         # batchは既にタプルとして渡される
-        x1, x2 = batch[0]  # バッチの最初の要素がタプル batchは(images, labels)の形式で渡される
-        x1, x2 = x1.to(device), x2.to(device)
+        views = batch[0]  # バッチの最初の要素がタプル batchは(images, labels)の形式で渡される
+        views = [view.to(device) for view in views]
         
         self.optimizer.zero_grad()
-        z1 = self(x1)
-        z2 = self(x2)
-        loss = self.criterion(z1, z2)
+        z = [self(view) for view in views]
+        loss = self.criterion(z)  # リストとして渡す
         loss.backward()
         self.optimizer.step()
         
@@ -171,11 +170,11 @@ class SimCLRWrapper(BaseWrapper):
             'loss': loss.item()
         }
     
-    def validation_step(self, batch: Tuple[torch.Tensor, torch.Tensor], device: str) -> Dict[str, float]:
+    def validation_step(self, batch: Tuple[torch.Tensor, ...], device: str) -> Dict[str, float]:
         """SimCLRの検証ステップ
         
         Args:
-            batch (Tuple[torch.Tensor, torch.Tensor]): 2つの拡張画像のバッチ
+            batch (Tuple[torch.Tensor, ...]): 拡張画像のバッチ
             device (str): 使用デバイス
             
         Returns:
@@ -183,13 +182,12 @@ class SimCLRWrapper(BaseWrapper):
         """
         self.eval()
         # batchは既にタプルとして渡される
-        x1, x2 = batch[0]  # バッチの最初の要素がタプル　タプル batchは(images, labels)の形式で渡される
-        x1, x2 = x1.to(device), x2.to(device)
+        views = batch[0]  # バッチの最初の要素がタプル batchは(images, labels)の形式で渡される
+        views = [view.to(device) for view in views]
         
         with torch.no_grad():
-            z1 = self(x1)
-            z2 = self(x2)
-            loss = self.criterion(z1, z2)
+            z = [self(view) for view in views]
+            loss = self.criterion(z)  # リストとして渡す
             
         return {
             'loss': loss.item()
