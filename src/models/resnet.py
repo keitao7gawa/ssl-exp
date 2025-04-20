@@ -4,9 +4,9 @@ import torchvision.models as models
 from typing import Optional, Type, Union, List
 
 class ResNetWrapper(nn.Module):
-    """CIFAR-10用にカスタマイズしたResNetラッパー
+    """ImageNet用にカスタマイズしたResNetラッパー
     
-    torchvisionのResNetモデルをベースに，CIFAR-10用に調整したモデルを提供します．
+    torchvisionのResNetモデルをベースに，入力画像サイズに応じて調整可能なモデルを提供します．
     
     Attributes:
         model (nn.Module): ベースとなるResNetモデル
@@ -17,6 +17,7 @@ class ResNetWrapper(nn.Module):
         model_name: str = "resnet18",
         pretrained: bool = False,
         num_classes: int = 10,
+        input_layer_params: Optional[dict] = None,
         **kwargs
     ):
         """ResNetWrapperの初期化
@@ -24,7 +25,12 @@ class ResNetWrapper(nn.Module):
         Args:
             model_name (str): 使用するResNetモデルの名前（resnet18, resnet34, resnet50, resnet101, resnet152）
             pretrained (bool): 事前学習済みの重みを使用するかどうか
-            num_classes (int): 出力クラス数（CIFAR-10の場合は10）
+            num_classes (int): 出力クラス数
+            input_layer_params (dict, optional): 入力層のパラメータ
+                - kernel_size (int): カーネルサイズ（デフォルト: 7）
+                - stride (int): ストライド（デフォルト: 2）
+                - padding (int): パディング（デフォルト: 3）
+                - bias (bool): バイアス項の有無（デフォルト: False）
             **kwargs: その他のResNetモデルのパラメータ
         """
         super().__init__()
@@ -43,13 +49,28 @@ class ResNetWrapper(nn.Module):
         else:
             raise ValueError(f"サポートされていないモデル名: {model_name}")
         
-        # CIFAR-10用に最終層を調整
+        # 入力層のパラメータ設定（ImageNet用デフォルト）
+        default_input_params = {
+            "kernel_size": 7,
+            "stride": 2,
+            "padding": 3,
+            "bias": False
+        }
+        if input_layer_params is not None:
+            default_input_params.update(input_layer_params)
+        
+        # 入力層の調整
+        self.model.conv1 = nn.Conv2d(
+            3, 64,
+            kernel_size=default_input_params["kernel_size"],
+            stride=default_input_params["stride"],
+            padding=default_input_params["padding"],
+            bias=default_input_params["bias"]
+        )
+        
+        # 出力層の調整
         in_features = self.model.fc.in_features
         self.model.fc = nn.Linear(in_features, num_classes)
-        
-        # CIFAR-10用に最初の層を調整（32x32の入力に対応）
-        self.model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
-        self.model.maxpool = nn.Identity()  # CIFAR-10では不要
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """順伝播

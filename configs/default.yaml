@@ -5,6 +5,8 @@ dataset:
   download: true
   train_transform:
     name: SimCLRTransform
+    params:
+      n_views: 2
 
 # 学習設定
 training:
@@ -49,3 +51,8 @@ model:
   temperature: 0.07  # SimCLRの温度パラメータ
   projection_dim: 128  # 投影ヘッドの出力次元
   hidden_dim: 512  # 投影ヘッドの中間層の次元
+  input_layer_params: # 入力層のパラメータ  CIFAR-10
+    kernel_size: 3
+    stride: 1
+    padding: 1
+    bias: false
