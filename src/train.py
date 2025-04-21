@@ -93,7 +93,7 @@ class BaseTrainer:
             epoch (int): 現在のエポック
             loss (float): 損失
         """
-        checkpoint_dir = self.output_dir / 'checkpoints'
+        checkpoint_dir = self.logger.log_dir / 'checkpoints'
         checkpoint_dir.mkdir(exist_ok=True)
         
         # 最新のモデルを保存
@@ -197,7 +197,7 @@ class SimCLRTrainer(BaseTrainer):
     def _setup_logger(self) -> None:
         """ロガーの設定"""
         self.logger = SimCLRLogger(
-            base_dir=self.config.training.output_dir,
+            base_dir=self.output_dir,
             config_path=self.config_path
         )
         
@@ -341,7 +341,7 @@ class MoCoTrainer(BaseTrainer):
     def _setup_logger(self) -> None:
         """ロガーの設定"""
         self.logger = MoCoLogger(
-            base_dir=self.config.training.output_dir,
+            base_dir=self.output_dir,
             config_path=self.config_path
         )
         
