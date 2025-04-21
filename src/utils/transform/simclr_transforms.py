@@ -15,9 +15,10 @@ class SimCLRTransform:
                 transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
             ], p=0.8),
             transforms.RandomGrayscale(p=0.2),
+            transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)),
             transforms.ToTensor(),
-            transforms.Normalize([0.4914, 0.4822, 0.4465],
-                                [0.2470, 0.2435, 0.2616]) # CIFAR-10の平均と標準偏差
+            # transforms.Normalize([0.4914, 0.4822, 0.4465],
+            #                     [0.2470, 0.2435, 0.2616]) # CIFAR-10の平均と標準偏差
         ])
 
     
