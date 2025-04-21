@@ -281,3 +281,143 @@ class FineTuneWrapper(BaseWrapper):
             for param in self.model[0].parameters():
                 param.requires_grad = False
         
+class MoCoWrapper(BaseWrapper):
+    """MoCo用のモデルラッパー
+    
+    MoCoの訓練に特化したラッパークラス．
+    キューとモーメンタムエンコーダーを管理し，InfoNCE損失を使用します．
+    
+    Attributes:
+        model (nn.Module): ベースとなるモデル
+        criterion (nn.Module): 損失関数
+        optimizer (torch.optim.Optimizer): オプティマイザ
+        scheduler (Optional[torch.optim.lr_scheduler._LRScheduler]): 学習率スケジューラ
+        temperature (float): InfoNCEロスの温度パラメータ
+    """
+    
+    def __init__(
+        self,
+        model: nn.Module,
+        optimizer: Optional[optim.Optimizer] = None,
+        scheduler: Optional[optim.lr_scheduler._LRScheduler] = None,
+        temperature: float = 0.07,
+        **kwargs: Any
+    ):
+        """MoCoWrapperの初期化
+        
+        Args:
+            model (nn.Module): ベースとなるモデル
+            optimizer (Optional[torch.optim.Optimizer]): オプティマイザ
+            scheduler (Optional[torch.optim.lr_scheduler._LRScheduler]): 学習率スケジューラ
+            temperature (float): InfoNCEロスの温度パラメータ
+            **kwargs: その他のパラメータ
+        """
+        super().__init__(
+            model=model,
+            criterion=nn.CrossEntropyLoss(),  # InfoNCE損失はCrossEntropyLossで実装
+            optimizer=optimizer,
+            scheduler=scheduler,
+            **kwargs
+        )
+        self.temperature = temperature
+        
+    def training_step(self, batch: Tuple[torch.Tensor, ...], device: str) -> Dict[str, float]:
+        """MoCoの学習ステップ
+        
+        Args:
+            batch (Tuple[torch.Tensor, ...]): 拡張画像のバッチ
+            device (str): 使用デバイス
+            
+        Returns:
+            Dict[str, float]: 学習結果（損失）
+        """
+        self.train()
+        # batchは既にタプルとして渡される
+        im_q, im_k = batch[0]  # バッチの最初の要素がタプル batchは(images, labels)の形式で渡される
+        im_q, im_k = im_q.to(device), im_k.to(device)
+        
+        self.optimizer.zero_grad()
+        logits, labels = self.model(im_q, im_k)
+        loss = self.criterion(logits, labels)
+        loss.backward()
+        self.optimizer.step()
+        
+        return {
+            'loss': loss.item()
+        }
+    
+    def validation_step(self, batch: Tuple[torch.Tensor, ...], device: str) -> Dict[str, float]:
+        """MoCoの検証ステップ
+        
+        Args:
+            batch (Tuple[torch.Tensor, ...]): 拡張画像のバッチ
+            device (str): 使用デバイス
+            
+        Returns:
+            Dict[str, float]: 検証結果（損失）
+        """
+        self.eval()
+        # batchは既にタプルとして渡される
+        im_q, im_k = batch[0]  # バッチの最初の要素がタプル batchは(images, labels)の形式で渡される
+        im_q, im_k = im_q.to(device), im_k.to(device)
+        
+        with torch.no_grad():
+            logits, labels = self.model(im_q, im_k)
+            loss = self.criterion(logits, labels)
+            
+        return {
+            'loss': loss.item()
+        }
+        
+    def save_checkpoint(self, path: str, epoch: int, train_loss: float) -> None:
+        """チェックポイントを保存します．
+        
+        Args:
+            path (str): 保存先のパス
+            epoch (int): エポック数
+            train_loss (float): 学習損失
+        """
+        checkpoint = {
+            'epoch': epoch,
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None,
+            'train_loss': train_loss,
+            'temperature': self.temperature
+        }
+        
+        # ディレクトリが存在しない場合は作成
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        torch.save(checkpoint, path)
+        
+    def load_checkpoint(self, path: str) -> Dict[str, Any]:
+        """チェックポイントを読み込みます．
+        
+        Args:
+            path (str): チェックポイントのパス
+            
+        Returns:
+            Dict[str, Any]: チェックポイントの情報
+        """
+        checkpoint = torch.load(path, map_location="cpu")
+        
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        if self.scheduler and checkpoint['scheduler_state_dict']:
+            self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            
+        # MoCo特有のパラメータを読み込み
+        self.temperature = checkpoint.get('temperature', 0.07)
+            
+        # チェックポイント復元後にoptimizerのstateを正しいデバイスに移す
+        device = next(self.model.parameters()).device
+        for state in self.optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.to(device)
+                    
+        return {
+            'epoch': checkpoint['epoch'],
+            'train_loss': checkpoint['train_loss']
+        }
+        

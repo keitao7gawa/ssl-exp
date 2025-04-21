@@ -138,4 +138,73 @@ class SimCLRLogger(BaseLogger):
         # コンソールに出力
         print(f"Epoch {epoch}:")
         for key, value in metrics.items():
-            print(f"  {key}: {value:.4f}") 
+            print(f"  {key}: {value:.4f}")
+
+class MoCoLogger(BaseLogger):
+    """MoCo用のロガー
+    
+    Attributes:
+        log_dir (Path): ログを保存するディレクトリ
+        csv_file (Path): CSVログファイルのパス
+        csv_writer (csv.writer): CSVライター
+        csv_file_handle: CSVファイルハンドル
+    """
+    
+    def __init__(self, base_dir: str = "runs", config_path: Optional[str] = None) -> None:
+        """初期化
+        
+        Args:
+            base_dir (str): ログのベースディレクトリ
+            config_path (Optional[str]): 設定ファイルのパス
+        """
+        super().__init__(base_dir, config_path)
+        
+        # ヘッダーを書き込み
+        self.csv_writer.writerow([
+            "epoch", 
+            "train_loss", 
+            "lr",  # 学習率
+            "temperature",  # 温度パラメータ
+            "queue_size",  # キューのサイズ
+            "momentum"  # モーメンタム係数
+        ])
+        
+    def log_metrics(self, epoch: int, metrics: Dict[str, float]) -> None:
+        """メトリクスをログに記録
+        
+        Args:
+            epoch (int): エポック数
+            metrics (Dict[str, float]): メトリクスの辞書
+        """
+        # CSVに記録
+        self.csv_writer.writerow([
+            epoch,
+            metrics.get("train_loss", 0.0),
+            metrics.get("lr", 0.0),  # 学習率
+            metrics.get("temperature", 0.0),  # 温度パラメータ
+            metrics.get("queue_size", 0.0),  # キューのサイズ
+            metrics.get("momentum", 0.0)  # モーメンタム係数
+        ])
+        
+        # コンソールに出力
+        print(f"Epoch {epoch}:")
+        for key, value in metrics.items():
+            print(f"  {key}: {value:.4f}")
+
+def setup_logger(logger_name: str, base_dir: str = "runs", config_path: Optional[str] = None) -> BaseLogger:
+    """ロガーを設定します．
+    
+    Args:
+        logger_name (str): ロガーの名前
+        base_dir (str): ログのベースディレクトリ
+        config_path (Optional[str]): 設定ファイルのパス
+        
+    Returns:
+        BaseLogger: 設定されたロガー
+    """
+    if logger_name == "simclr":
+        return SimCLRLogger(base_dir, config_path)
+    elif logger_name == "moco":
+        return MoCoLogger(base_dir, config_path)
+    else:
+        raise ValueError(f"サポートされていないロガー: {logger_name}") 
