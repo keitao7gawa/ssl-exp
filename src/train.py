@@ -13,7 +13,7 @@ from dataset import MyCIFAR10
 from model_wrapper import SimCLRWrapper, MoCoWrapper
 from logger import SimCLRLogger, MoCoLogger
 from models.simclr import SimCLR
-from models.moco import MoCo
+from models.moco import MoCo, MoCoV2
 from models.resnet import ResNetWrapper
 from optimizer.lars import LARS
 
@@ -279,13 +279,25 @@ class MoCoTrainer(BaseTrainer):
         )
         
         # MoCoモデル
-        moco_model = MoCo(
-            encoder=encoder,
-            dim=self.config.model.dim,
-            K=self.config.model.K,
-            m=self.config.model.m,
-            T=self.config.model.T
-        )
+        if self.config.framework == "moco":
+            moco_model = MoCo(
+                encoder=encoder,
+                dim=self.config.model.dim,
+                K=self.config.model.K,
+                m=self.config.model.m,
+                T=self.config.model.T
+            )
+        elif self.config.framework == "mocov2":
+            moco_model = MoCoV2(
+                encoder=encoder,
+                dim=self.config.model.dim,
+                mlp_dim=self.config.model.mlp_dim,
+                K=self.config.model.K,
+                m=self.config.model.m,
+                T=self.config.model.T
+            )
+        else:
+            raise ValueError(f'サポートされていないフレームワーク: {self.config.framework}')
         
         # MoCoWrapper
         self.model_wrapper = MoCoWrapper(
@@ -414,10 +426,10 @@ def main():
     # 訓練クラスの選択
     if config.framework == 'simclr':
         trainer = SimCLRTrainer(config, args.config)
-    elif config.framework == 'moco':
+    elif config.framework in ['moco', 'mocov2']:
         trainer = MoCoTrainer(config, args.config)
     else:
-        raise ValueError(f'サポートされていないモデル: {config.model.name}')
+        raise ValueError(f'サポートされていないフレームワーク: {config.framework}')
     
     # 訓練の実行
     trainer.train()
