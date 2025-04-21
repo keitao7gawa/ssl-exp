@@ -1,3 +1,5 @@
+# フレームワーク設定
+framework: simclr
 # データセット設定
 dataset:
   name: CIFAR10
@@ -51,6 +53,7 @@ model:
   temperature: 0.07  # SimCLRの温度パラメータ
   projection_dim: 128  # 投影ヘッドの出力次元
   hidden_dim: 512  # 投影ヘッドの中間層の次元
+  pretrained: false
   input_layer_params: # 入力層のパラメータ  CIFAR-10
     kernel_size: 3
     stride: 1
