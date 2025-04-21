@@ -262,7 +262,7 @@ class MoCoV2(MoCo):
         logits /= self.T
         
         # ラベル（正例はインデックス0）
-        labels = torch.zeros(logits.shape[0], dtype=torch.long).cuda()
+        labels = torch.zeros(logits.shape[0], dtype=torch.long, device=logits.device)
         
         # キューを更新
         self._dequeue_and_enqueue(k)
