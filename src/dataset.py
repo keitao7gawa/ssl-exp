@@ -82,9 +82,9 @@ class HFD100(Dataset):
     """
     def __init__(self, train: bool,
                  dir_path: str,
-                 train_transform_cfg: Dict[str, Any] = {"name": "None"},
-                 val_transform_cfg: Dict[str, Any] = {"name": "None"},
-                 target_transform_cfg: Dict[str, Any] = {"name": "None"},
+                 train_transform: Dict[str, Any] = {"name": "None"},
+                 val_transform: Dict[str, Any] = {"name": "None"},
+                 target_transform: Dict[str, Any] = {"name": "None"},
                  data_types = None,
                  use_all: bool = False):
         
@@ -92,7 +92,7 @@ class HFD100(Dataset):
         self.step = "train" if train else "test"
 
         # set transfomr
-        transform_cfg = train_transform_cfg if train else val_transform_cfg
+        transform_cfg = train_transform if train else val_transform
         if transform_cfg["name"] == "None":
             self.transform = None
         else:
@@ -103,12 +103,12 @@ class HFD100(Dataset):
                 self.transform = transform_class()
 
         # set target transform
-        if target_transform_cfg["name"] == "None":
+        if target_transform["name"] == "None":
             self.target_transform = None
         else:
-            transform_class = TRANSFORM_MAP[target_transform_cfg["name"]]
-            if "params" in target_transform_cfg:
-                self.target_transform = transform_class(**target_transform_cfg["params"])
+            transform_class = TRANSFORM_MAP[target_transform["name"]]
+            if "params" in target_transform:
+                self.target_transform = transform_class(**target_transform["params"])
             else:
                 self.target_transform = transform_class()
 

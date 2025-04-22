@@ -5,7 +5,7 @@ dataset:
   name: CIFAR10
   root: ./data
   download: true
-  train_transform:
+  transform_cfg:
     name: SimCLRTransform
     params:
       n_views: 2
@@ -55,6 +55,7 @@ model:
   hidden_dim: 512  # 投影ヘッドの中間層の次元
   pretrained: false
   input_layer_params: # 入力層のパラメータ  CIFAR-10
+    in_channels: 3
     kernel_size: 3
     stride: 1
     padding: 1

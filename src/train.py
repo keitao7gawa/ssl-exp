@@ -9,7 +9,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from omegaconf import OmegaConf
 
-from dataset import MyCIFAR10
+from dataset import MyCIFAR10, HFD100
 from model_wrapper import SimCLRWrapper, MoCoWrapper
 from logger import SimCLRLogger, MoCoLogger
 from models.simclr import SimCLR
@@ -44,6 +44,10 @@ class BaseTrainer:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # データセットとデータローダーの設定
+        self.DATASET_DICT = {
+            "CIFAR10": MyCIFAR10,
+            "HFD100": HFD100
+        }
         self._setup_data()
         
         # モデルの設定
@@ -119,12 +123,11 @@ class SimCLRTrainer(BaseTrainer):
     def _setup_data(self) -> None:
         """データセットとデータローダーの設定"""
         # データセット
-        self.train_dataset = MyCIFAR10(
-            train=True,
-            root=self.config.dataset.root,
-            download=self.config.dataset.download,
-            transform_cfg=self.config.dataset.train_transform
-        )
+        dataset_params = self.config.dataset
+        dataset_params = {k: v for k, v in dataset_params.items() if k != "name"}
+        self.train_dataset = self.DATASET_DICT[self.config.dataset.name](
+            train = True,
+            **dataset_params)
         
         # データローダー
         self.train_loader = DataLoader(
