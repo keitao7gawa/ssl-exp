@@ -1,8 +1,12 @@
-from typing import Dict, Any
+from typing import Dict, Any, List
 from torch.utils.data import Dataset
 from torchvision import datasets
 from torchvision import transforms
 from utils.transform_dict import TRANSFORM_MAP
+import h5py
+import os
+from ast import literal_eval
+import torch
 
 class MyCIFAR10(Dataset):
     """CIFAR10データセットのラッパークラス
@@ -65,3 +69,103 @@ class MyCIFAR10(Dataset):
             tuple: (画像, ラベル)
         """
         return self.base_dataset[idx] 
+    
+class HFD100(Dataset):
+    """HFD100データセットのラッパークラス
+    
+    Attributes:
+        train (bool): 訓練データかどうか
+        dir_path (str): データセットのディレクトリパス
+        train_transform (transforms.Compose): 訓練データの変換
+        val_transform (transforms.Compose): 検証データの変換
+        all_flag (bool): 全てのデータを使用するかどうか
+    """
+    def __init__(self, train: bool,
+                 dir_path: str,
+                 train_transform_cfg: Dict[str, Any] = {"name": "None"},
+                 val_transform_cfg: Dict[str, Any] = {"name": "None"},
+                 target_transform_cfg: Dict[str, Any] = {"name": "None"},
+                 data_types = None,
+                 use_all: bool = False):
+        
+        self.dir_path = dir_path
+        self.step = "train" if train else "test"
+
+        # set transfomr
+        transform_cfg = train_transform_cfg if train else val_transform_cfg
+        if transform_cfg["name"] == "None":
+            self.transform = None
+        else:
+            transform_class = TRANSFORM_MAP[transform_cfg["name"]]
+            if "params" in transform_cfg:
+                self.transform = transform_class(**transform_cfg["params"])
+            else:
+                self.transform = transform_class()
+
+        # set target transform
+        if target_transform_cfg["name"] == "None":
+            self.target_transform = None
+        else:
+            transform_class = TRANSFORM_MAP[target_transform_cfg["name"]]
+            if "params" in target_transform_cfg:
+                self.target_transform = transform_class(**target_transform_cfg["params"])
+            else:
+                self.target_transform = transform_class()
+
+        self.use_all = use_all
+        
+        data_types = data_types if isinstance(data_types, list) else [data_types]
+        assert all([data_type in ["scene", "flower", "leaf"] for data_type in data_types]), "data_types must be one of ['scene', 'flower', 'leaf']"
+
+        self.metadata = self.__load_metadata(data_types)
+        
+        
+    def __load_metadata(self, data_types: List[str]):
+        """メタデータを読み込む"""
+        TYPE_DICT = {"scene": "MatScenes60.h5", "flower": "MatFlower60.h5", "leaf": "MatLeaves60.h5"}
+        metadata = []
+        for data_type in data_types:
+            with h5py.File(os.path.join(self.dir_path, TYPE_DICT[data_type]), "r") as f:
+                if self.use_all:
+                    for step in ["train", "test"]:
+                        meta = f[step]["metadata"][()]
+                        meta_dict = literal_eval(meta.decode("utf-8"))
+                        for dict in meta_dict:
+                            dict['hsi'] = os.path.join(TYPE_DICT[data_type], step, dict['hsi'])
+                        metadata += meta_dict
+                else:
+                    meta = f[self.step]["metadata"][()]
+                    meta_dict = literal_eval(meta.decode("utf-8"))
+                    for dict in meta_dict:
+                        dict['hsi'] = os.path.join(TYPE_DICT[data_type], self.step, dict['hsi'])
+                    metadata += meta_dict
+        return metadata
+    
+    def __len__(self):
+        """データセットのサイズを返す"""
+        return len(self.metadata)
+    
+    def __getitem__(self, idx: int):
+        """データセットからサンプルを取得"""
+        image_meta_data = self.metadata[idx]
+
+        image_path = image_meta_data["hsi"].split("/")
+        h5_name = image_path[0]
+        step_name = image_path[1]
+        image_name = image_path[3]
+
+        with h5py.File(os.path.join(self.dir_path, h5_name), "r") as f:
+            image = f[step_name]['hs'][image_name][()]
+            target = f[step_name]['target'][image_name][()]
+
+        # image (H, W, C) -> (C, H, W), ndarray -> tensor
+        image = image.transpose(2, 0, 1)
+        image = torch.from_numpy(image).float()
+        target = torch.tensor(target, dtype=torch.long)
+
+        if self.transform is not None:
+            image = self.transform(image)
+        
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+        return image, target
