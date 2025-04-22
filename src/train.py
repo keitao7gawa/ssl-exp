@@ -255,12 +255,12 @@ class MoCoTrainer(BaseTrainer):
     def _setup_data(self) -> None:
         """データセットとデータローダーの設定"""
         # データセット
-        self.train_dataset = MyCIFAR10(
-            train=True,
-            root=self.config.dataset.root,
-            download=self.config.dataset.download,
-            transform_cfg=self.config.dataset.train_transform
-        )
+
+        dataset_params = self.config.dataset
+        dataset_params = {k: v for k, v in dataset_params.items() if k != "name"}
+        self.train_dataset = self.DATASET_DICT[self.config.dataset.name](
+            train = True,
+            **dataset_params)
         
         # データローダー
         self.train_loader = DataLoader(
