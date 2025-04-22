@@ -290,7 +290,8 @@ class MoCoTrainer(BaseTrainer):
                 dim=self.config.model.dim,
                 K=self.config.model.K,
                 m=self.config.model.m,
-                T=self.config.model.T
+                T=self.config.model.T,
+                input_layer_params=self.config.model.input_layer_params
             )
         elif self.config.framework == "mocov2":
             moco_model = MoCoV2(
@@ -299,7 +300,8 @@ class MoCoTrainer(BaseTrainer):
                 mlp_dim=self.config.model.mlp_dim,
                 K=self.config.model.K,
                 m=self.config.model.m,
-                T=self.config.model.T
+                T=self.config.model.T,
+                input_layer_params=self.config.model.input_layer_params
             )
         else:
             raise ValueError(f'サポートされていないフレームワーク: {self.config.framework}')
