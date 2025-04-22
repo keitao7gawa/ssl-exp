@@ -40,6 +40,26 @@ class BaseWrapper(nn.Module):
         self.criterion = criterion or nn.CrossEntropyLoss()
         self.optimizer = optimizer
         self.scheduler = scheduler
+        self.device = next(self.model.parameters()).device
+    
+    def to(self, device: str) -> 'BaseWrapper':
+        """モデルとそのコンポーネントを指定されたデバイスに移動します．
+        
+        Args:
+            device (str): 移動先のデバイス
+            
+        Returns:
+            BaseWrapper: 自身のインスタンス
+        """
+        self.model = self.model.to(device)
+        self.criterion = self.criterion.to(device)
+        if self.optimizer is not None:
+            for state in self.optimizer.state.values():
+                for k, v in state.items():
+                    if isinstance(v, torch.Tensor):
+                        state[k] = v.to(device)
+        self.device = device
+        return self
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """順伝播
@@ -86,20 +106,26 @@ class BaseWrapper(nn.Module):
         Returns:
             Dict[str, Any]: チェックポイントの情報
         """
+        # チェックポイントをCPUにロード
         checkpoint = torch.load(path, map_location="cpu")
         
+        # モデルの状態をロード
         self.model.load_state_dict(checkpoint['model_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        if self.scheduler and checkpoint['scheduler_state_dict']:
+        # モデルをデバイスに転送
+        self.model = self.model.to(self.device)
+        
+        # オプティマイザの状態をロード
+        if self.optimizer is not None:
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            # オプティマイザの状態をデバイスに転送
+            for state in self.optimizer.state.values():
+                for k, v in state.items():
+                    if isinstance(v, torch.Tensor):
+                        state[k] = v.to(self.device)
+        
+        if self.scheduler is not None and checkpoint['scheduler_state_dict'] is not None:
             self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
             
-        # チェックポイント復元後にoptimizerのstateを正しいデバイスに移す
-        device = next(self.model.parameters()).device
-        for state in self.optimizer.state.values():
-            for k, v in state.items():
-                if isinstance(v, torch.Tensor):
-                    state[k] = v.to(device)
-                    
         return {
             'epoch': checkpoint['epoch'],
             'train_loss': checkpoint['train_loss']
@@ -225,24 +251,25 @@ class SimCLRWrapper(BaseWrapper):
         """
         checkpoint = torch.load(path, map_location="cpu")
         
+        # モデルの状態をロードしてGPUに転送
         self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.model = self.model.to(self.device)
+        
+        # オプティマイザの状態をロード
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        if self.scheduler and checkpoint['scheduler_state_dict']:
-            self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-            
+        
+        # オプティマイザの状態をGPUに転送
+        for state in self.optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.to(self.device)
+                    
         # SimCLR特有のパラメータを読み込み
         self.temperature = checkpoint.get('temperature', 0.07)
         # 温度パラメータが変更された場合は損失関数を再初期化
         if self.temperature != self.criterion.temperature:
             self.criterion = NTXentLoss(temperature=self.temperature)
             
-        # チェックポイント復元後にoptimizerのstateを正しいデバイスに移す
-        device = next(self.model.parameters()).device
-        for state in self.optimizer.state.values():
-            for k, v in state.items():
-                if isinstance(v, torch.Tensor):
-                    state[k] = v.to(device)
-                    
         return {
             'epoch': checkpoint['epoch'],
             'train_loss': checkpoint['train_loss']
@@ -399,23 +426,24 @@ class MoCoWrapper(BaseWrapper):
         Returns:
             Dict[str, Any]: チェックポイントの情報
         """
-        checkpoint = torch.load(path, map_location="cpu")
-        
-        self.model.load_state_dict(checkpoint['model_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        if self.scheduler and checkpoint['scheduler_state_dict']:
-            self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-            
-        # MoCo特有のパラメータを読み込み
-        self.temperature = checkpoint.get('temperature', 0.07)
-            
-        # チェックポイント復元後にoptimizerのstateを正しいデバイスに移す
         device = next(self.model.parameters()).device
+        checkpoint = torch.load(path, map_location=device)
+        
+        # モデルの状態をロードしてGPUに転送
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        
+        # オプティマイザの状態をロード
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        
+        # オプティマイザの状態をGPUに転送
         for state in self.optimizer.state.values():
             for k, v in state.items():
                 if isinstance(v, torch.Tensor):
                     state[k] = v.to(device)
                     
+        # MoCo特有のパラメータを読み込み
+        self.temperature = checkpoint.get('temperature', 0.07)
+            
         return {
             'epoch': checkpoint['epoch'],
             'train_loss': checkpoint['train_loss']
