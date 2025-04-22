@@ -27,6 +27,7 @@ class ResNetWrapper(nn.Module):
             pretrained (bool): 事前学習済みの重みを使用するかどうか
             num_classes (int): 出力クラス数
             input_layer_params (dict, optional): 入力層のパラメータ
+                - in_channels (int): 入力チャンネル数（デフォルト: 3）
                 - kernel_size (int): カーネルサイズ（デフォルト: 7）
                 - stride (int): ストライド（デフォルト: 2）
                 - padding (int): パディング（デフォルト: 3）
@@ -61,7 +62,7 @@ class ResNetWrapper(nn.Module):
         
         # 入力層の調整
         self.model.conv1 = nn.Conv2d(
-            3, 64,
+            default_input_params["in_channels"], 64,
             kernel_size=default_input_params["kernel_size"],
             stride=default_input_params["stride"],
             padding=default_input_params["padding"],
