@@ -52,6 +52,7 @@ class ResNetWrapper(nn.Module):
         
         # 入力層のパラメータ設定（ImageNet用デフォルト）
         default_input_params = {
+            "in_channels": 3,
             "kernel_size": 7,
             "stride": 2,
             "padding": 3,
