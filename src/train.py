@@ -145,7 +145,8 @@ class SimCLRTrainer(BaseTrainer):
         encoder = ResNetWrapper(
             model_name=self.config.model.name,
             pretrained=self.config.model.pretrained,
-            num_classes=self.config.model.hidden_dim
+            num_classes=self.config.model.hidden_dim,
+            input_layer_params=self.config.model.input_layer_params
         )
         
         # SimCLRモデル
@@ -278,7 +279,8 @@ class MoCoTrainer(BaseTrainer):
         encoder = ResNetWrapper(
             model_name=self.config.model.name,
             pretrained=self.config.model.pretrained,
-            num_classes=self.config.model.dim
+            num_classes=self.config.model.dim,
+            input_layer_params=self.config.model.input_layer_params
         )
         
         # MoCoモデル
