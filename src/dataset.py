@@ -118,6 +118,8 @@ class HFD100(Dataset):
         assert all([data_type in ["scene", "flower", "leaf"] for data_type in data_types]), "data_types must be one of ['scene', 'flower', 'leaf']"
 
         self.metadata = self.__load_metadata(data_types)
+        TYPE_DICT = {"scene": "MatScenes60.h5", "flower": "MatFlower60.h5", "leaf": "MatLeaves60.h5"}
+        self.h5_files = {TYPE_DICT[data_type]: h5py.File(os.path.join(self.dir_path, TYPE_DICT[data_type]), "r") for data_type in data_types}
         
         
     def __load_metadata(self, data_types: List[str]):
@@ -154,9 +156,8 @@ class HFD100(Dataset):
         step_name = image_path[1]
         image_name = image_path[3]
 
-        with h5py.File(os.path.join(self.dir_path, h5_name), "r") as f:
-            image = f[step_name]['hs'][image_name][()]
-            target = f[step_name]['target'][image_name][()]
+        image = self.h5_files[h5_name][step_name]['hs'][image_name][()]
+        target = self.h5_files[h5_name][step_name]['target'][image_name][()]
 
         # image (H, W, C) -> (C, H, W), ndarray -> tensor
         image = image.transpose(2, 0, 1)

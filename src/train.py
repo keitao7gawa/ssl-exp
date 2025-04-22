@@ -256,7 +256,6 @@ class MoCoTrainer(BaseTrainer):
     def _setup_data(self) -> None:
         """データセットとデータローダーの設定"""
         # データセット
-
         dataset_params = self.config.dataset
         dataset_params = {k: v for k, v in dataset_params.items() if k != "name"}
         self.train_dataset = self.DATASET_DICT[self.config.dataset.name](
@@ -270,7 +269,9 @@ class MoCoTrainer(BaseTrainer):
             shuffle=True,
             num_workers=self.config.training.num_workers,
             pin_memory=self.config.training.pin_memory,
-            drop_last=self.config.training.drop_last
+            drop_last=self.config.training.drop_last,
+            persistent_workers=True,
+            multiprocessing_context='fork'
         )
         
     def _setup_model(self) -> None:
@@ -352,12 +353,14 @@ class MoCoTrainer(BaseTrainer):
             config_path=self.config_path
         )
         
-    def train(self) -> None:
+    def train(self, start_epoch: int = 0) -> None:
         """訓練ループ"""
         self.model_wrapper.to(self.device)
-        self.best_loss = float('inf')
+        if not hasattr(self, 'best_loss'):
+            self.best_loss = float('inf')
         
-        for epoch in range(self.config.training.epochs):
+        for epoch in range(start_epoch, self.config.training.epochs):
+            print(f"エポック {epoch + 1} / {self.config.training.epochs}")
             # 1エポックの訓練
             train_loss = self._train_epoch(epoch)
             
@@ -438,8 +441,16 @@ def main():
     else:
         raise ValueError(f'サポートされていないフレームワーク: {config.framework}')
     
+    # チェックポイントの読み込み
+    start_epoch = 0
+    if args.resume:
+        checkpoint_info = trainer.model_wrapper.load_checkpoint(args.resume)
+        start_epoch = checkpoint_info['epoch']
+        trainer.best_loss = checkpoint_info['train_loss']
+        print(f'チェックポイントを読み込みました: エポック = {start_epoch}, 損失 = {trainer.best_loss:.4f}')
+        
     # 訓練の実行
-    trainer.train()
+    trainer.train(start_epoch=start_epoch)
     
     # ロガーを閉じる
     trainer.logger.close()
