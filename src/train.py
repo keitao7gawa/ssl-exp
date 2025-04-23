@@ -43,6 +43,9 @@ class BaseTrainer:
         self.output_dir = Path(config.training.output_dir) / config.training.experiment_name
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
+        # Early Stoppingの初期化
+        self._setup_early_stopping()
+        
         # データセットとデータローダーの設定
         self.DATASET_DICT = {
             "CIFAR10": MyCIFAR10,
@@ -58,6 +61,49 @@ class BaseTrainer:
         
         # ロガーの設定
         self._setup_logger()
+        
+    def _setup_early_stopping(self) -> None:
+        """Early Stoppingの初期化"""
+        self.early_stopping_enabled = self.config.training.early_stopping.enabled
+        if self.early_stopping_enabled:
+            self.patience = self.config.training.early_stopping.patience
+            self.min_delta = self.config.training.early_stopping.min_delta
+            self.mode = self.config.training.early_stopping.mode
+            self.best_metric = float('inf') if self.mode == 'min' else float('-inf')
+            self.counter = 0
+            self.early_stop = False
+            
+    def _check_early_stopping(self, metric: float) -> bool:
+        """Early Stoppingのチェック
+        
+        Args:
+            metric (float): 現在の評価指標
+            
+        Returns:
+            bool: 学習を停止すべきかどうか
+        """
+        if not self.early_stopping_enabled:
+            return False
+            
+        if self.mode == 'min':
+            if metric < self.best_metric - self.min_delta:
+                self.best_metric = metric
+                self.counter = 0
+            else:
+                self.counter += 1
+        else:  # mode == 'max'
+            if metric > self.best_metric + self.min_delta:
+                self.best_metric = metric
+                self.counter = 0
+            else:
+                self.counter += 1
+                
+        if self.counter >= self.patience:
+            self.early_stop = True
+            self.logger.log_message(f'Early Stopping: {self.patience}エポック間改善が見られませんでした')
+            return True
+            
+        return False
         
     def _setup_data(self) -> None:
         """データセットとデータローダーの設定"""
@@ -217,6 +263,10 @@ class SimCLRTrainer(BaseTrainer):
             # チェックポイントの保存
             self._save_checkpoint(epoch, train_loss)
             
+            # Early Stoppingのチェック
+            if self._check_early_stopping(train_loss):
+                break
+            
     def _train_epoch(self, epoch: int) -> float:
         """1エポックの訓練
         
@@ -366,6 +416,10 @@ class MoCoTrainer(BaseTrainer):
             
             # チェックポイントの保存
             self._save_checkpoint(epoch, train_loss)
+            
+            # Early Stoppingのチェック
+            if self._check_early_stopping(train_loss):
+                break
             
     def _train_epoch(self, epoch: int) -> float:
         """1エポックの訓練

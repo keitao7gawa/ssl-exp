@@ -9,6 +9,9 @@ dataset:
     name: SimCLRTransform
     params:
       n_views: 2
+      hs_colorjitter: true
+      gaussian_blur: true
+      instance_normalization: true
 
 # 学習設定
 training:
@@ -29,6 +32,13 @@ training:
   device: cuda
   seed: 42
   amp: true  # Automatic Mixed Precision
+  
+  # Early Stopping設定
+  early_stopping:
+    enabled: true
+    patience: 10  # 改善が見られないエポック数
+    min_delta: 0.001  # 改善とみなす最小の変化量
+    mode: min  # min: 損失を最小化, max: スコアを最大化
   
   # 最適化アルゴリズム設定
   optimizer:
