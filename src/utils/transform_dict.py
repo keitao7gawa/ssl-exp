@@ -3,10 +3,12 @@ from .transform.simclr_transforms import SimCLRTransform
 from .transform.cutout_transforms import CutOut
 from .transform.moco_transforms import MoCoTransform
 from .transform.hs_transforms import HSSimCLRTransform, HSMoCoTransform
+from .transform.hs_rgb_transforms import HStoRGBSimCLRTransform
 TRANSFORM_MAP: Dict[str, Any] = {
     "SimCLRTransform": SimCLRTransform,
     "CutOut": CutOut,
     "MoCoTransform": MoCoTransform,
     "HSSimCLRTransform": HSSimCLRTransform,
     "HSMoCoTransform": HSMoCoTransform,
+    "HStoRGBSimCLRTransform": HStoRGBSimCLRTransform,
 }
