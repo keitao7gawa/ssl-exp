@@ -35,19 +35,7 @@ class HSSimCLRTransform:
             )
             
         
-        self.transform = transforms.Compose([
-            transforms.RandomResizedCrop(64, scale=(0.2, 1.0)), # transforms.RandomResizedCrop(32)
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomApply([
-                RandomHSColorJitter(0.4, 0.4, 0.4, 0.1)
-            ], p=0.8),
-            transforms.RandomApply([
-                RandomHSGrayscale()
-            ], p=0.2),
-            # transforms.ToTensor(), すでに Tensorなので不要
-            # transforms.Normalize([0.5, 0.5, 0.5],
-            #                     [0.5, 0.5, 0.5])
-        ])
+        self.transform = transforms.Compose(transform_list)
 
     
     def __call__(self, x):
