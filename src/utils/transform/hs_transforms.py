@@ -2,7 +2,7 @@ from torchvision import transforms
 from .hs_colorjitter import RandomHSColorJitter, RandomHSGrayscale
 
 class HSSimCLRTransform:
-    def __init__(self, n_views: int = 2, hs_colorjitter: bool = True, gaussian_blur: bool = True, instance_normalization: bool = False):
+    def __init__(self, n_views: int = 2, hs_colorjitter: bool = True, hs_grayscale: bool = True, gaussian_blur: bool = True, instance_normalization: bool = False):
         """SimCLRのデータ拡張
         
         Args:
@@ -19,11 +19,12 @@ class HSSimCLRTransform:
                     RandomHSColorJitter(0.4, 0.4, 0.4, 0.1)
                 ], p=0.8)
             )
-        transform_list.append(
-            transforms.RandomApply([
-                RandomHSGrayscale()
-            ], p=0.2),
-        )
+        if hs_grayscale:
+            transform_list.append(
+                transforms.RandomApply([
+                    RandomHSGrayscale()
+                ], p=0.2),
+            )
         if gaussian_blur:
             transform_list.append(
                 transforms.GaussianBlur(kernel_size=23, sigma=(0.1, 2.0)),
