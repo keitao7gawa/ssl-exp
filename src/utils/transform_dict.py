@@ -4,6 +4,7 @@ from .transform.cutout_transforms import CutOut
 from .transform.moco_transforms import MoCoTransform
 from .transform.hs_transforms import HSSimCLRTransform, HSMoCoTransform
 from .transform.hs_rgb_transforms import HStoRGBSimCLRTransform
+from .transform.hs_to_rgb import HStoRGB
 TRANSFORM_MAP: Dict[str, Any] = {
     "SimCLRTransform": SimCLRTransform,
     "CutOut": CutOut,
@@ -11,4 +12,5 @@ TRANSFORM_MAP: Dict[str, Any] = {
     "HSSimCLRTransform": HSSimCLRTransform,
     "HSMoCoTransform": HSMoCoTransform,
     "HStoRGBSimCLRTransform": HStoRGBSimCLRTransform,
+    "HStoRGB": HStoRGB,
 }
