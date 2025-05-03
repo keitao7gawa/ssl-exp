@@ -28,13 +28,25 @@ class HStoRGBSimCLRTransform:
             )
         if instance_normalization:
             transform_list.append(
-                transforms.Lambda(lambda x: (x - x.view(x.size(0), -1).mean(dim=1, keepdim=True).view(x.size(0), 1, 1)) / 
-                                  (x.view(x.size(0), -1).std(dim=1, keepdim=True).view(x.size(0), 1, 1) + 1e-5))
+                transforms.Lambda(lambda x: self.instance_normalize(x))
             )
             
         self.transform = transforms.Compose(transform_list)
 
-    
+    def instance_normalize(self, x):
+        if x.dim() == 4:
+            # (B, C, H, W)
+            mean = x.view(x.size(0), x.size(1), -1).mean(dim=2, keepdim=True).view(x.size(0), x.size(1), 1, 1)
+            std = x.view(x.size(0), x.size(1), -1).std(dim=2, keepdim=True).view(x.size(0), x.size(1), 1, 1)
+            return (x - mean) / (std + 1e-5)
+        elif x.dim() == 3:
+            # (C, H, W)
+            mean = x.view(x.size(0), -1).mean(dim=1, keepdim=True).view(x.size(0), 1, 1)
+            std = x.view(x.size(0), -1).std(dim=1, keepdim=True).view(x.size(0), 1, 1)
+            return (x - mean) / (std + 1e-5)
+        else:
+            raise ValueError("Input must be (B, C, H, W) or (C, H, W)")
+        
     def __call__(self, x):
         """入力画像にデータ拡張を適用
         
