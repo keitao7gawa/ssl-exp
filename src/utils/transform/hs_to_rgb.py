@@ -48,15 +48,16 @@ def hs_to_rgb(hsi: torch.Tensor, lower_limit_wavelength: int=350, upper_limit_wa
     valid_wavelengths = (wave_length >= color_matching_function[0, 0]) & (wave_length <= color_matching_function[-1, 0])
     index_low = torch.where(valid_wavelengths)[0][0]
     index_high = torch.where(valid_wavelengths)[0][-1] + 1
-
     hsi_cie_range = hsi[:, :, index_low:index_high]
 
-    M = torch.tensor([[0.41844, -0.15866, -0.08283],
-                     [-0.09117, 0.25242, 0.01570],
-                     [0.00092, -0.00255, 0.17858]], device=device, dtype=torch.float32)
+    # 色変換行列 XYZ to sRGB
+    M = torch.tensor([
+        [3.2404542, -1.5371385, -0.4985314],
+        [-0.9692660, 1.8760108, 0.0415560],
+        [0.0556434, -0.2040259, 1.0572252]
+    ], device=device, dtype=torch.float32)
     
     intensity = hsi_cie_range.reshape(-1, index_high - index_low)
-    
     xyz = torch.matmul(intensity, color_matching_function[:, 1:])
     img_xyz = xyz.reshape(height, width, 3)
     img_rgb = torch.matmul(img_xyz, M.T)
@@ -563,6 +564,88 @@ def extract_rgb(hsi: torch.Tensor,
         rgb = rgb / rgb.max()
         rgb = torch.clamp(rgb, min=0)
         rgb = rgb.pow(1/2.2)
+        rgb = torch.clamp(rgb, min=0, max=1)
+        return rgb
+
+    rgb = hs_to_rgb(hsi, lower_limit_wavelength, upper_limit_wavelength, spectrum_stepsize)
+    rgb = rgb / rgb.max()
+    rgb = rgb.pow(1/2.2)
+    rgb = torch.clamp(rgb, min=0, max=1)
+    return rgb
+
+def extract_rgb_test(hsi: torch.Tensor,
+                lower_limit_wavelength: int=350,
+                upper_limit_wavelength: int=1100,
+                spectrum_stepsize: int=5,
+                spectrum_bands: int=151):
+    """
+    補間用テスト関数
+    """
+    
+    device = hsi.device
+    if not isinstance(hsi, torch.Tensor):
+        hsi = torch.from_numpy(hsi).to(device)
+    hsi = hsi.float()  # float32に変換
+    
+    if (upper_limit_wavelength - lower_limit_wavelength) % spectrum_stepsize != 0:
+        cmf = torch.from_numpy(get_10_deg_XYZ_CMFs()).to(device).float()  # float32に変換
+        wavelength = torch.linspace(lower_limit_wavelength, upper_limit_wavelength, spectrum_bands, device=device, dtype=torch.float32)
+        spectrum_stepsize = (upper_limit_wavelength - lower_limit_wavelength) / spectrum_bands
+        valid_indices = wavelength <= cmf[-1, 0]
+        cropped_wavelength = wavelength[valid_indices]
+
+        
+        # もし可視光領域をカバーしきれていなかったら補間する
+        if cropped_wavelength[0] > cmf[0, 0]+spectrum_stepsize:
+            # 波長を延ばす
+            print("短波長を延ばす")
+            print(spectrum_stepsize)
+            num_points = int((cropped_wavelength[0] - cmf[0,0]) // spectrum_stepsize)
+            print(cmf[0,0], cropped_wavelength[0], num_points)
+            waves = np.linspace(cmf[0,0], cropped_wavelength[0], num_points+1)
+            print(len(waves[:-1]),waves[:-1])
+            cropped_wavelength = torch.cat([torch.tensor(waves[:-1], device=device), cropped_wavelength])
+            print(cropped_wavelength[0], cropped_wavelength[-1])
+            h, w, c = hsi.shape
+            # 新しい波長ポイント数を計算
+            num_points = len(waves[:-1])
+            # 補間のための重み計算 (0.5から0へ線形)
+            weights = torch.linspace(0.7, 1, num_points+1, device=device)[:-1]
+            print(weights)
+            # 補間結果を格納する配列を作成
+            interpolated_hsi = torch.zeros((h, w, num_points), device=device)
+            # 各ポイントで重み付けした値を計算
+            for i in range(num_points):
+                interpolated_hsi[:, :, i] = hsi[:, :, 0] * weights[i]
+            # 元のhsiと結合
+            print(interpolated_hsi.shape, hsi.shape)
+            hsi = torch.cat([interpolated_hsi, hsi], dim=2)
+            print(hsi.shape)
+            lower_limit_wavelength = waves[0]
+            spectrum_bands = hsi.shape[2]
+
+        if cropped_wavelength[-1] < cmf[-1, 0]-spectrum_stepsize:
+            # 波長を延ばす
+            print("長波長を延ばす")
+            num_points = int((cmf[-1,0] - cropped_wavelength[-1]) // spectrum_stepsize)
+            waves = np.linspace(cropped_wavelength[-1], cmf[-1,0], num_points)
+            print(waves)
+            cropped_wavelength = torch.cat([cropped_wavelength, torch.tensor(waves[2:], device=device)])
+            
+        print(cropped_wavelength[0], cropped_wavelength[-1])
+        interpolated_cmf = interpolate_cmf(cmf.cpu().numpy(), cropped_wavelength.cpu().numpy())  # interpolateはnumpyのまま
+        interpolated_cmf = torch.from_numpy(interpolated_cmf).to(device).float()  # float32に変換
+        print(interpolated_cmf[0], interpolated_cmf[-1])
+        print(interpolated_cmf.shape)
+        rgb = hs_to_rgb(hsi,
+                        lower_limit_wavelength=lower_limit_wavelength,
+                        upper_limit_wavelength=upper_limit_wavelength,
+                        spectrum_stepsize=(upper_limit_wavelength - lower_limit_wavelength) / spectrum_bands,
+                        color_matching_function=interpolated_cmf)
+        rgb = torch.clamp(rgb, min=0)
+        rgb = rgb.pow(1/2.2)
+        print(rgb.min(), rgb.max())
+        rgb = rgb.float() / rgb.max()
         rgb = torch.clamp(rgb, min=0, max=1)
         return rgb
 
