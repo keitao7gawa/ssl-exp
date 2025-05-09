@@ -5,6 +5,7 @@ from .transform.moco_transforms import MoCoTransform
 from .transform.hs_transforms import HSSimCLRTransform, HSMoCoTransform
 from .transform.hs_rgb_transforms import HStoRGBSimCLRTransform
 from .transform.hs_to_rgb import HStoRGB
+from torchvision.transforms import RandomResizedCrop
 TRANSFORM_MAP: Dict[str, Any] = {
     "SimCLRTransform": SimCLRTransform,
     "CutOut": CutOut,
@@ -13,4 +14,5 @@ TRANSFORM_MAP: Dict[str, Any] = {
     "HSMoCoTransform": HSMoCoTransform,
     "HStoRGBSimCLRTransform": HStoRGBSimCLRTransform,
     "HStoRGB": HStoRGB,
+    "RandomResizedCrop": RandomResizedCrop,
 }
