@@ -19,12 +19,6 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-data/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-*.ipynb
-!notebooks/visualize_transforms.ipynb
 
 # Virtual Environment
 venv/
@@ -37,18 +31,42 @@ ENV/
 *.swp
 *.swo
 
-# Project specific
-runs/
-*.log
-*.csv
-*.pth
-*.pt
-*.onnx
-*.pb
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+!notebooks/visualize_transforms.ipynb
 
-# OS
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+tests/
+
+# Logs
+*.log
+logs/
+runs/
+
+# Model checkpoints
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+
+# Dataset
+data/
+datasets/
+
+# Misc
 .DS_Store
-Thumbs.db 
+.env
+.env.local
+.env.*.local
 
 # config
 configs/*
