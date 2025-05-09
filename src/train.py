@@ -10,12 +10,13 @@ from torch.utils.data import DataLoader
 from omegaconf import OmegaConf
 
 from dataset import MyCIFAR10, HFD100
-from model_wrapper import SimCLRWrapper, MoCoWrapper
-from logger import SimCLRLogger, MoCoLogger
+from model_wrapper import SimCLRWrapper, MoCoWrapper, MAEWrapper
+from logger import SimCLRLogger, MoCoLogger, MAELogger
 from models.simclr import SimCLR
 from models.moco import MoCo, MoCoV2
 from models.resnet import ResNetWrapper
 from optimizer.lars import LARS
+from models.mae import MaskedAutoencoderViT
 
 class BaseTrainer:
     """訓練の基底クラス
@@ -456,6 +457,175 @@ class MoCoTrainer(BaseTrainer):
         
         return train_loss
 
+class MAETrainer(BaseTrainer):
+    """MAEの訓練クラス
+    
+    MAEの事前学習を管理するクラス．
+    マスク付き自己符号化器の訓練を実行します．
+    
+    Attributes:
+        config (Dict[str, Any]): 設定
+        device (str): 使用デバイス
+        output_dir (Path): 出力ディレクトリ
+        logger (MAELogger): ロガー
+        config_path (str): 設定ファイルのパス
+    """
+    
+    def _setup_data(self) -> None:
+        """データセットとデータローダーの設定"""
+        # データセット
+        dataset_params = self.config.dataset
+        dataset_params = {k: v for k, v in dataset_params.items() if k != "name"}
+        self.train_dataset = self.DATASET_DICT[self.config.dataset.name](
+            train = True,
+            **dataset_params)
+        
+        # データローダー
+        self.train_loader = DataLoader(
+            self.train_dataset,
+            batch_size=self.config.training.batch_size,
+            shuffle=True,
+            num_workers=self.config.training.num_workers,
+            pin_memory=self.config.training.pin_memory,
+            drop_last=self.config.training.drop_last,
+            persistent_workers=True,
+            multiprocessing_context='fork'
+        )
+        
+    def _setup_model(self) -> None:
+        """モデルの設定"""
+        # MAEモデル
+        mae_model = MaskedAutoencoderViT(
+            img_size=self.config.model.img_size,
+            patch_size=self.config.model.patch_size,
+            in_chans=self.config.model.in_chans,
+            embed_dim=self.config.model.embed_dim,
+            depth=self.config.model.depth,
+            num_heads=self.config.model.num_heads,
+            decoder_embed_dim=self.config.model.decoder_embed_dim,
+            decoder_depth=self.config.model.decoder_depth,
+            decoder_num_heads=self.config.model.decoder_num_heads,
+            mlp_ratio=self.config.model.mlp_ratio,
+            norm_layer=nn.LayerNorm,
+            norm_pix_loss=self.config.model.norm_pix_loss
+        )
+        
+        # ロガーの設定
+        self._setup_logger()
+        
+        # MAEWrapper
+        self.model_wrapper = MAEWrapper(
+            model=mae_model,
+            norm_pix_loss=self.config.model.norm_pix_loss,
+            mask_ratio=self.config.model.mask_ratio,
+            logger=self.logger
+        )
+        
+    def _setup_optimizer(self) -> None:
+        """最適化アルゴリズムと学習率スケジューラの設定"""
+        # 最適化アルゴリズム
+        optimizer_name = self.config.training.optimizer.name
+        optimizer_params = self.config.training.optimizer.params
+        
+        if optimizer_name == 'adamw':
+            optimizer = optim.AdamW(
+                self.model_wrapper.parameters(),
+                lr=optimizer_params.lr,
+                weight_decay=optimizer_params.weight_decay,
+                betas=(optimizer_params.beta1, optimizer_params.beta2)
+            )
+        else:
+            raise ValueError(f'サポートされていない最適化アルゴリズム: {optimizer_name}')
+        
+        # 学習率スケジューラ
+        scheduler_name = self.config.training.scheduler.name
+        scheduler_params = self.config.training.scheduler.params
+        
+        if scheduler_name == 'CosineAnnealingLR':
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=self.config.training.epochs * self.config.training.batch_size,
+                eta_min=scheduler_params.eta_min
+            )
+        else:
+            raise ValueError(f'サポートされていないスケジューラ: {scheduler_name}')
+        
+        # モデルに設定
+        self.model_wrapper.optimizer = optimizer
+        self.model_wrapper.scheduler = scheduler
+        
+    def _setup_logger(self) -> None:
+        """ロガーの設定"""
+        self.logger = MAELogger(
+            base_dir=self.output_dir,
+            config_path=self.config_path
+        )
+        
+    def train(self, start_epoch: int = 0) -> None:
+        """訓練ループ"""
+        torch.cuda.empty_cache()
+        self.model_wrapper.to(self.device)
+        if not hasattr(self, 'best_loss'):
+            self.best_loss = float('inf')
+        
+        for epoch in range(start_epoch, self.config.training.epochs):
+            print(f"エポック {epoch + 1} / {self.config.training.epochs}")
+            self.logger.set_epoch_info(epoch, self.config.training.epochs)
+            # 1エポックの訓練
+            train_loss = self._train_epoch(epoch)
+            
+            # チェックポイントの保存
+            self._save_checkpoint(epoch, train_loss)
+            
+            # Early Stoppingのチェック
+            if self._check_early_stopping(train_loss):
+                break
+            
+    def _train_epoch(self, epoch: int) -> float:
+        """1エポックの訓練
+        
+        Args:
+            epoch (int): 現在のエポック
+            
+        Returns:
+            float: 平均損失
+        """
+        self.model_wrapper.train()
+        train_loss = 0.0
+        train_total = 0
+        
+        # ロガーにバッチ情報を設定
+        self.logger.set_batch_info(0, len(self.train_loader))
+        
+        for batch_idx, batch in enumerate(self.train_loader):
+            result = self.model_wrapper.training_step(batch, self.device)
+            train_loss += result['loss']
+            train_total += 1
+            
+            # 進捗の更新（バッチインデックスを1から始める）
+            
+            self.logger.set_batch_info(batch_idx + 1, len(self.train_loader))
+            self.logger.update_progress(result['loss'])
+            
+            # バッファをフラッシュ
+            if hasattr(self.logger, 'csv_file_handle'):
+                self.logger.csv_file_handle.flush()
+        
+        train_loss = train_loss / train_total
+        
+        # ログ記録
+        metrics = {
+            'train_loss': train_loss,
+            'lr': self.model_wrapper.optimizer.param_groups[0]['lr'],
+            'mask_ratio': self.model_wrapper.mask_ratio
+        }
+        self.logger.log_metrics(epoch + 1, metrics)
+        
+        # 学習率の更新
+        self.model_wrapper.update_scheduler()
+        
+        return train_loss
+
 def parse_args() -> argparse.Namespace:
     """コマンドライン引数を解析します．
     
@@ -492,6 +662,8 @@ def main():
         trainer = SimCLRTrainer(config, args.config)
     elif config.framework in ['moco', 'mocov2']:
         trainer = MoCoTrainer(config, args.config)
+    elif config.framework == 'mae':
+        trainer = MAETrainer(config, args.config)
     else:
         raise ValueError(f'サポートされていないフレームワーク: {config.framework}')
     

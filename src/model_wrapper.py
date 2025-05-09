@@ -448,4 +448,159 @@ class MoCoWrapper(BaseWrapper):
             'epoch': checkpoint['epoch'],
             'train_loss': checkpoint['train_loss']
         }
+
+class MAEWrapper(BaseWrapper):
+    """MAE用のモデルラッパー
+    
+    MAEの訓練に特化したラッパークラス．
+    マスク付き自己符号化器の訓練を管理します．
+    
+    Attributes:
+        model (nn.Module): ベースとなるMAEモデル
+        criterion (nn.Module): 損失関数
+        optimizer (torch.optim.Optimizer): オプティマイザ
+        scheduler (Optional[torch.optim.lr_scheduler._LRScheduler]): 学習率スケジューラ
+        norm_pix_loss (bool): ピクセル正規化損失を使用するかどうか
+        mask_ratio (float): マスク率（デフォルトは0.75）
+    """
+    
+    def __init__(
+        self,
+        model: nn.Module,
+        criterion: Optional[nn.Module] = None,
+        optimizer: Optional[optim.Optimizer] = None,
+        scheduler: Optional[optim.lr_scheduler._LRScheduler] = None,
+        norm_pix_loss: bool = False,
+        mask_ratio: float = 0.75,
+        **kwargs: Any
+    ):
+        """MAEWrapperの初期化
         
+        Args:
+            model (nn.Module): ベースとなるMAEモデル
+            criterion (Optional[nn.Module]): 損失関数
+            optimizer (Optional[torch.optim.Optimizer]): オプティマイザ
+            scheduler (Optional[torch.optim.lr_scheduler._LRScheduler]): 学習率スケジューラ
+            norm_pix_loss (bool): ピクセル正規化損失を使用するかどうか
+            mask_ratio (float): マスク率（デフォルトは0.75）
+            **kwargs: その他のパラメータ
+        """
+        super().__init__(
+            model=model,
+            criterion=criterion,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            **kwargs
+        )
+        self.norm_pix_loss = norm_pix_loss
+        self.mask_ratio = mask_ratio
+        
+    def forward_loss(self, imgs: torch.Tensor, pred: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """損失関数
+        
+        Args:
+            imgs (torch.Tensor): 入力画像 [N, C, H, W]
+            pred (torch.Tensor): 予測結果 [N, L, p*p*C]
+            mask (torch.Tensor): マスク [N, L], 0は保持，1は削除
+            
+        Returns:
+            torch.Tensor: 損失
+        """
+        target = self.model.patchify(imgs)
+        if self.norm_pix_loss:
+            mean = target.mean(dim=-1, keepdim=True)
+            var = target.var(dim=-1, keepdim=True)
+            target = (target - mean) / (var + 1.e-6)**.5
+            
+        loss = (pred - target) ** 2
+        loss = loss.mean(dim=-1)  # [N, L], パッチごとの平均損失
+        
+        loss = (loss * mask).sum() / mask.sum()  # 削除されたパッチの平均損失
+        return loss
+        
+    def training_step(self, batch: Tuple[torch.Tensor, ...], device: str) -> Dict[str, float]:
+        """MAEの学習ステップ
+        
+        Args:
+            batch (Tuple[torch.Tensor, ...]): バッチデータ
+            device (str): 使用デバイス
+            
+        Returns:
+            Dict[str, float]: 学習結果（損失）
+        """
+        self.train()
+        imgs = batch[0].to(device)
+        
+        # 順伝播（マスク率を指定）
+        pred, mask = self.model(imgs, self.mask_ratio)
+        
+        # 損失の計算
+        loss = self.forward_loss(imgs, pred, mask)
+        
+        # 逆伝播
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        
+        if self.scheduler is not None:
+            self.scheduler.step()
+            
+        return {
+            'loss': loss.item()
+        }
+        
+    def save_checkpoint(self, path: str, epoch: int, train_loss: float) -> None:
+        """チェックポイントを保存します．
+        
+        Args:
+            path (str): 保存先のパス
+            epoch (int): エポック数
+            train_loss (float): 学習損失
+        """
+        checkpoint = {
+            'epoch': epoch,
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None,
+            'train_loss': train_loss,
+            'mask_ratio': self.mask_ratio
+        }
+        
+        # ディレクトリが存在しない場合は作成
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        torch.save(checkpoint, path)
+        
+    def load_checkpoint(self, path: str) -> Dict[str, Any]:
+        """チェックポイントを読み込みます．
+        
+        Args:
+            path (str): チェックポイントのパス
+            
+        Returns:
+            Dict[str, Any]: チェックポイントの情報
+        """
+        checkpoint = torch.load(path, map_location="cpu")
+        
+        # モデルの状態をロードしてGPUに転送
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.model = self.model.to(self.device)
+        
+        # オプティマイザの状態をロード
+        if self.optimizer is not None:
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            # オプティマイザの状態をGPUに転送
+            for state in self.optimizer.state.values():
+                for k, v in state.items():
+                    if isinstance(v, torch.Tensor):
+                        state[k] = v.to(self.device)
+        
+        if self.scheduler is not None and checkpoint['scheduler_state_dict'] is not None:
+            self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            
+        # マスク率を読み込み
+        self.mask_ratio = checkpoint.get('mask_ratio', 0.75)
+            
+        return {
+            'epoch': checkpoint['epoch'],
+            'train_loss': checkpoint['train_loss']
+        }

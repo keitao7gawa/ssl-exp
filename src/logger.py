@@ -191,6 +191,116 @@ class MoCoLogger(BaseLogger):
         for key, value in metrics.items():
             print(f"  {key}: {value:.4f}")
 
+class MAELogger(BaseLogger):
+    """MAE用のロガー
+    
+    MAEの訓練に特化したロガークラス．
+    進捗表示機能を備えています．
+    
+    Attributes:
+        log_dir (Path): ログを保存するディレクトリ
+        csv_file (Path): CSVログファイルのパス
+        csv_writer (csv.writer): CSVライター
+        csv_file_handle: CSVファイルハンドル
+        current_epoch (int): 現在のエポック
+        total_epochs (int): 総エポック数
+        current_batch (int): 現在のバッチ
+        total_batches (int): 総バッチ数
+        current_loss (float): 現在の損失
+    """
+    
+    def __init__(self, base_dir: str = "runs", config_path: Optional[str] = None) -> None:
+        """初期化
+        
+        Args:
+            base_dir (str): ログのベースディレクトリ
+            config_path (Optional[str]): 設定ファイルのパス
+        """
+        super().__init__(base_dir, config_path)
+        
+        # ヘッダーを書き込み
+        self.csv_writer.writerow([
+            "epoch", 
+            "train_loss", 
+            "val_loss", 
+            "lr",  # 学習率
+            "mask_ratio"  # マスク率
+        ])
+        
+        # 進捗表示用の変数
+        self.current_epoch = 0
+        self.total_epochs = 0
+        self.current_batch = 0
+        self.total_batches = 0
+        self.current_loss = 0.0
+        
+    def set_epoch_info(self, current_epoch: int, total_epochs: int) -> None:
+        """エポック情報を設定
+        
+        Args:
+            current_epoch (int): 現在のエポック
+            total_epochs (int): 総エポック数
+        """
+        self.current_epoch = current_epoch
+        self.total_epochs = total_epochs
+        
+    def set_batch_info(self, current_batch: int, total_batches: int) -> None:
+        """バッチ情報を設定
+        
+        Args:
+            current_batch (int): 現在のバッチ
+            total_batches (int): 総バッチ数
+        """
+        self.current_batch = current_batch
+        self.total_batches = total_batches
+        
+    def update_progress(self, loss: float) -> None:
+        """進捗を更新
+        
+        Args:
+            loss (float): 現在の損失
+        """
+        self.current_loss = loss
+        self._print_progress()
+        
+    def _print_progress(self) -> None:
+        """進捗を表示"""
+        # 進捗の計算
+        progress = self.current_batch / self.total_batches
+        
+        # 進捗情報の表示（シンプルな形式）
+        progress_str = (f'E{self.current_epoch+1}/{self.total_epochs} '
+                       f'B{self.current_batch}/{self.total_batches} '
+                       f'({progress*100:.1f}%) '
+                       f'L:{self.current_loss:.4f}')
+        
+        # 進捗情報を出力
+        print(f'\r{progress_str}', end='', flush=True)
+        
+    def log_metrics(self, epoch: int, metrics: Dict[str, float]) -> None:
+        """メトリクスをログに記録
+        
+        Args:
+            epoch (int): エポック数
+            metrics (Dict[str, float]): メトリクスの辞書
+        """
+        # 改行を入れて新しい行に表示
+        print()
+        
+        # CSVに記録
+        self.csv_writer.writerow([
+            epoch,
+            metrics.get("train_loss", 0.0),
+            metrics.get("val_loss", 0.0),
+            metrics.get("lr", 0.0),  # 学習率
+            metrics.get("mask_ratio", 0.75)  # マスク率
+        ])
+        
+        # コンソールに出力
+        print(f"Epoch {epoch}:")
+        for key, value in metrics.items():
+            print(f"  {key}: {value:.4f}")
+
 def setup_logger(logger_name: str, base_dir: str = "runs", config_path: Optional[str] = None) -> BaseLogger:
     """ロガーを設定します．
     
@@ -206,5 +316,7 @@ def setup_logger(logger_name: str, base_dir: str = "runs", config_path: Optional
         return SimCLRLogger(base_dir, config_path)
     elif logger_name == "moco":
         return MoCoLogger(base_dir, config_path)
+    elif logger_name == "mae":
+        return MAELogger(base_dir, config_path)
     else:
         raise ValueError(f"サポートされていないロガー: {logger_name}") 
