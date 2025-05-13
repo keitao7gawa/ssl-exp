@@ -156,8 +156,14 @@ class HFD100(Dataset):
         step_name = image_path[1]
         image_name = image_path[3]
 
-        image = self.h5_files[h5_name][step_name]['hs'][image_name][()]
-        target = self.h5_files[h5_name][step_name]['target'][image_name][()]
+        try:
+            image = self.h5_files[h5_name][step_name]['hs'][image_name][()]
+            target = self.h5_files[h5_name][step_name]['target'][image_name][()]
+        except OSError:
+            self.h5_files[h5_name].close()
+            self.h5_files[h5_name] = h5py.File(os.path.join(self.dir_path, h5_name), "r")
+            image = self.h5_files[h5_name][step_name]['hs'][image_name][()]
+            target = self.h5_files[h5_name][step_name]['target'][image_name][()]
 
         # image (H, W, C) -> (C, H, W), ndarray -> tensor
         image = image.transpose(2, 0, 1)
@@ -170,3 +176,11 @@ class HFD100(Dataset):
         if self.target_transform is not None:
             target = self.target_transform(target)
         return image, target
+    
+def __del__(self):
+    for h5_file in self.h5_files.values():
+        try:
+            if h5_file and h5_file.id.valid:
+                h5_file.close()
+        except:
+            pass
