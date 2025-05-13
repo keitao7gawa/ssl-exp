@@ -57,3 +57,16 @@ class HStoRGBSimCLRTransform:
             tuple: n_views個の拡張画像のタプル
         """
         return tuple(self.transform(x) for _ in range(self.n_views))
+    
+class HStoRGBMAETransform:
+    def __init__(self, size: Tuple[int, int] = (64, 64),
+                 range_wavelength: Tuple[int, int] = (350, 1100),
+                 spectrum_stepsize: int = 5,
+                 spectrum_bands: int = 151):
+        self.transform = transforms.Compose([
+            transforms.RandomResizedCrop(size=(size[0], size[1]), scale=(0.2, 1.0)),
+            HStoRGB(lower_limit_wavelength=range_wavelength[0], upper_limit_wavelength=range_wavelength[1], spectrum_stepsize=spectrum_stepsize, spectrum_bands=spectrum_bands),
+        ])
+        
+    def __call__(self, x):
+        return self.transform(x)

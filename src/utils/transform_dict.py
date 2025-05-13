@@ -2,8 +2,8 @@ from typing import Dict, Any
 from .transform.simclr_transforms import SimCLRTransform
 from .transform.cutout_transforms import CutOut
 from .transform.moco_transforms import MoCoTransform
-from .transform.hs_transforms import HSSimCLRTransform, HSMoCoTransform
-from .transform.hs_rgb_transforms import HStoRGBSimCLRTransform
+from .transform.hs_transforms import HSSimCLRTransform, HSMoCoTransform, HSMAETransform
+from .transform.hs_rgb_transforms import HStoRGBSimCLRTransform, HStoRGBMAETransform
 from .transform.hs_to_rgb import HStoRGB
 from torchvision.transforms import RandomResizedCrop
 TRANSFORM_MAP: Dict[str, Any] = {
@@ -15,4 +15,6 @@ TRANSFORM_MAP: Dict[str, Any] = {
     "HStoRGBSimCLRTransform": HStoRGBSimCLRTransform,
     "HStoRGB": HStoRGB,
     "RandomResizedCrop": RandomResizedCrop,
+    "HSMAETransform": HSMAETransform,
+    "HStoRGBMAETransform": HStoRGBMAETransform,
 }

@@ -35,6 +35,7 @@ class HSSimCLRTransform:
                                   (x.view(x.size(0), -1).std(dim=1, keepdim=True).view(x.size(0), 1, 1) + 1e-5))
             )
             
+            
         
         self.transform = transforms.Compose(transform_list)
 
@@ -80,3 +81,16 @@ class HSMoCoTransform:
             tuple: n_views個の拡張画像のタプル
         """
         return tuple(self.transform(x) for _ in range(self.n_views))
+    
+
+class HSMAETransform:
+    def __init__(self, size: tuple[int, int] = (64, 64), min_max: tuple[int, int] = (0, 4096)):
+        self.transform = transforms.Compose([
+            transforms.RandomResizedCrop(size[0], scale=(0.2, 1.0)),
+            transforms.Lambda(lambda x: (x - min_max[0]) / (min_max[1] - min_max[0])), # 0-1に正規化
+        ])
+        
+    def __call__(self, x):
+        return self.transform(x)
+        
+        
