@@ -472,6 +472,7 @@ class MAEWrapper(BaseWrapper):
         scheduler: Optional[optim.lr_scheduler._LRScheduler] = None,
         norm_pix_loss: bool = False,
         mask_ratio: float = 0.75,
+        logger: Optional[Any] = None,
         **kwargs: Any
     ):
         """MAEWrapperの初期化
@@ -483,6 +484,7 @@ class MAEWrapper(BaseWrapper):
             scheduler (Optional[torch.optim.lr_scheduler._LRScheduler]): 学習率スケジューラ
             norm_pix_loss (bool): ピクセル正規化損失を使用するかどうか
             mask_ratio (float): マスク率（デフォルトは0.75）
+            logger (Optional[Any]): ロガー
             **kwargs: その他のパラメータ
         """
         super().__init__(
@@ -494,6 +496,7 @@ class MAEWrapper(BaseWrapper):
         )
         self.norm_pix_loss = norm_pix_loss
         self.mask_ratio = mask_ratio
+        self.logger = logger
         
     def forward_loss(self, imgs: torch.Tensor, pred: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """損失関数
@@ -506,18 +509,28 @@ class MAEWrapper(BaseWrapper):
         Returns:
             torch.Tensor: 損失
         """
+        assert self.mask_ratio == mask.mean().item(), f"マスク率が一致しません．期待値: {self.mask_ratio}, 実際の値: {mask.mean().item()}"
         target = self.model.patchify(imgs)
         if self.norm_pix_loss:
             mean = target.mean(dim=-1, keepdim=True)
             var = target.var(dim=-1, keepdim=True)
             target = (target - mean) / (var + 1.e-6)**.5
-            
+
         loss = (pred - target) ** 2
         loss = loss.mean(dim=-1)  # [N, L], パッチごとの平均損失
         
         loss = (loss * mask).sum() / mask.sum()  # 削除されたパッチの平均損失
         return loss
+    
+    def forward(self, imgs: torch.Tensor) -> torch.Tensor:
+        """モデルの順伝播
         
+        Args:
+            imgs (torch.Tensor): 入力画像 [N, C, H, W]
+            
+        """
+        pred, mask = self.model(imgs, self.mask_ratio)
+        return pred, mask
     def training_step(self, batch: Tuple[torch.Tensor, ...], device: str) -> Dict[str, float]:
         """MAEの学習ステップ
         
