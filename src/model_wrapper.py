@@ -131,6 +131,27 @@ class BaseWrapper(nn.Module):
             'train_loss': checkpoint['train_loss']
         }
 
+    def save_encoder(self, path: str, encoder_name: str = "encoder") -> None:
+        """
+        エンコーダのみを保存
+        Args:
+            path (str): 保存先のパス
+            encoder_name (str): エンコーダの名前
+        """
+        # エンコーダの状態を取得
+        if hasattr(self.model, 'encoder'):
+            encoder_state: Dict[str, Any] = self.model.encoder.state_dict()
+        else:
+            encoder_state: Dict[str, Any] = self.model.state_dict()
+        
+        # ディレクトリが存在しない場合は作成
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        torch.save({
+            'name': encoder_name,
+            'state_dict': encoder_state
+        }, path)
+        
+
 class SimCLRWrapper(BaseWrapper):
     """SimCLR用のモデルラッパー
     
@@ -617,3 +638,40 @@ class MAEWrapper(BaseWrapper):
             'epoch': checkpoint['epoch'],
             'train_loss': checkpoint['train_loss']
         }
+
+    def save_encoder(self, path: str, encoder_name: str = "encoder", model_config: Dict[str, Any] = None) -> None:
+        """
+        エンコーダのみを保存
+        Args:
+            path (str): 保存先のパス
+            encoder_name (str): エンコーダの名前
+        """
+
+        encoder_state = {}
+        for k, v in self.model.state_dict().items():
+            if not k.startswith("decoder_"): 
+                encoder_state[k] = v
+
+        # model_configが指定されている場合は設定を保存
+        if model_config is not None:
+            save_model_config: Dict[str, Any] = {
+                'img_size': model_config.get("img_size"),
+                'patch_size': model_config.get("patch_size"), 
+                'in_chans': model_config.get("in_chans"),
+                'embed_dim': model_config.get("embed_dim"),
+                'depth': model_config.get("depth"),
+                'num_heads': model_config.get("num_heads"),
+                'mlp_ratio': model_config.get("mlp_ratio")
+            }
+        
+        # ディレクトリが存在しない場合は作成
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        torch.save({
+            "name": encoder_name,
+            "state_dict": encoder_state
+        }, path) if save_model_config is None else torch.save({
+            "name": encoder_name,
+            "state_dict": encoder_state,
+            "config": save_model_config
+        }, path)
+        
