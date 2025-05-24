@@ -5,6 +5,7 @@ from typing import Tuple, Optional, List
 import math
 import numpy as np
 from functools import partial
+from torch.utils.checkpoint import checkpoint
 
 from timm.models.vision_transformer import PatchEmbed, Block
 
@@ -40,7 +41,7 @@ class MaskedAutoencoderViT(nn.Module):
         decoder_num_heads: int = 16,
         mlp_ratio: float = 4.0,
         norm_layer: nn.Module = nn.LayerNorm,
-        norm_pix_loss: bool = False
+        use_checkpoint: bool = False
     ):
         """MAEモデルの初期化
         
@@ -56,7 +57,7 @@ class MaskedAutoencoderViT(nn.Module):
             decoder_num_heads (int): デコーダーのヘッド数
             mlp_ratio (float): MLPの比率
             norm_layer (nn.Module): 正規化層
-            norm_pix_loss (bool): ピクセル正規化損失を使用するかどうか
+            use_checkpoint (bool): 勾配チェックポイントを使用するかどうか
         """
         super().__init__()
         
@@ -64,7 +65,8 @@ class MaskedAutoencoderViT(nn.Module):
         self.embed_dim = embed_dim
         self.depth = depth
         self.num_heads = num_heads
-        self.in_chans = in_chans  # 入力チャンネル数を保存
+        self.in_chans = in_chans
+        self.use_checkpoint = use_checkpoint
         
         # パッチ埋め込み
         self.patch_embed = PatchEmbed(
@@ -92,6 +94,8 @@ class MaskedAutoencoderViT(nn.Module):
             )
             for _ in range(depth)
         ])
+        
+        # エンコーダーの正規化層
         self.norm = norm_layer(embed_dim)
         
         # デコーダーの埋め込み層
@@ -119,55 +123,37 @@ class MaskedAutoencoderViT(nn.Module):
         self.decoder_norm = norm_layer(decoder_embed_dim)
         
         # デコーダーの予測層
-        self.decoder_pred = nn.Linear(
-            decoder_embed_dim,
-            patch_size * patch_size * in_chans,
-            bias=True
-        )
-        
-        # ピクセル正規化損失
-        self.norm_pix_loss = norm_pix_loss
+        self.decoder_pred = nn.Linear(decoder_embed_dim, patch_size * patch_size * in_chans, bias=True)
         
         # 初期化
         self.initialize_weights()
         
-    def initialize_weights(self):
+    def initialize_weights(self) -> None:
         """重みの初期化"""
         # 位置埋め込みの初期化
-        pos_embed = get_2d_sincos_pos_embed(
-            self.pos_embed.shape[-1],
-            int(self.patch_embed.num_patches ** 0.5),
-            cls_token=True
-        )
+        pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.patch_embed.num_patches**.5), cls_token=True)
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
         
-        # デコーダーの位置埋め込みの初期化
-        decoder_pos_embed = get_2d_sincos_pos_embed(
-            self.decoder_pos_embed.shape[-1],
-            int(self.patch_embed.num_patches ** 0.5),
-            cls_token=True
-        )
+        decoder_pos_embed = get_2d_sincos_pos_embed(self.decoder_pos_embed.shape[-1], int(self.patch_embed.num_patches**.5), cls_token=True)
         self.decoder_pos_embed.data.copy_(torch.from_numpy(decoder_pos_embed).float().unsqueeze(0))
         
-        # パッチ埋め込みの初期化
-        w = self.patch_embed.proj.weight.data
-        torch.nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
+        # CLSトークンの初期化
+        nn.init.normal_(self.cls_token, std=0.02)
         
-        # CLSトークンとマスクトークンの初期化
-        torch.nn.init.normal_(self.cls_token, std=0.02)
-        torch.nn.init.normal_(self.mask_token, std=0.02)
+        # マスクトークンの初期化
+        nn.init.normal_(self.mask_token, std=0.02)
         
-        # 線形層と正規化層の初期化
+        # その他の重みの初期化
         self.apply(self._init_weights)
         
-    def _init_weights(self, m):
+    def _init_weights(self, m: nn.Module) -> None:
         """重みの初期化
         
         Args:
             m (nn.Module): 初期化するモジュール
         """
         if isinstance(m, nn.Linear):
-            torch.nn.init.xavier_uniform_(m.weight)
+            nn.init.xavier_uniform_(m.weight)
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.LayerNorm):
@@ -178,69 +164,62 @@ class MaskedAutoencoderViT(nn.Module):
         """画像をパッチに分割
         
         Args:
-            imgs (torch.Tensor): 入力画像 [N, C, H, W]
+            imgs (torch.Tensor): 入力画像 [B, C, H, W]
             
         Returns:
-            torch.Tensor: パッチ化された画像 [N, L, patch_size**2 *C]
+            torch.Tensor: パッチ化された画像 [B, L, p*p*C]
         """
         p = self.patch_embed.patch_size[0]
         assert imgs.shape[2] == imgs.shape[3] and imgs.shape[2] % p == 0
         
         h = w = imgs.shape[2] // p
-        x = imgs.reshape(shape=(imgs.shape[0], imgs.shape[1], h, p, w, p))
+        x = imgs.reshape(shape=(imgs.shape[0], self.in_chans, h, p, w, p))
         x = torch.einsum('nchpwq->nhwpqc', x)
-        x = x.reshape(shape=(imgs.shape[0], h * w, p**2 * imgs.shape[1]))
+        x = x.reshape(shape=(imgs.shape[0], h * w, p**2 * self.in_chans))
         return x
         
     def unpatchify(self, x: torch.Tensor) -> torch.Tensor:
         """パッチを画像に戻す
         
         Args:
-            x (torch.Tensor): パッチ化された画像 [N, L, patch_size**2 *C]
+            x (torch.Tensor): パッチ化された画像 [B, L, p*p*C]
             
         Returns:
-            torch.Tensor: 元の画像 [N, C, H, W]
+            torch.Tensor: 元の画像 [B, C, H, W]
         """
         p = self.patch_embed.patch_size[0]
-        h = w = int(x.shape[1] ** 0.5)
+        h = w = int((x.shape[1])**.5)
         assert h * w == x.shape[1]
         
-        # チャンネル数を計算
-        c = x.shape[2] // (p * p)
-        
-        x = x.reshape(shape=(x.shape[0], h, w, p, p, c))
+        x = x.reshape(shape=(x.shape[0], h, w, p, p, self.in_chans))
         x = torch.einsum('nhwpqc->nchpwq', x)
-        imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
+        imgs = x.reshape(shape=(x.shape[0], self.in_chans, h * p, h * p))
         return imgs
         
     def random_masking(self, x: torch.Tensor, mask_ratio: float) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """ランダムマスキング
         
         Args:
-            x (torch.Tensor): 入力テンソル [N, L, D]
+            x (torch.Tensor): 入力テンソル [B, L, D]
             mask_ratio (float): マスク率
             
         Returns:
-            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-                - マスクされたテンソル
-                - マスク
-                - 復元用のインデックス
+            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: マスクされたテンソル，マスク，インデックス
         """
-        N, L, D = x.shape  # batch, length, dim
-        len_keep = int(L * (1 - mask_ratio))
+        N, L, D = x.shape
+        len_keep = int(L * (1 - mask_ratio))  # 保持するパッチ数
         
-        # ノイズを生成
-        noise = torch.rand(N, L, device=x.device)  # uniform in [0, 1]
+        noise = torch.rand(N, L, device=x.device)
         
         # シャッフル
-        ids_shuffle = torch.argsort(noise, dim=1)  # ascend: small is keep, large is remove
+        ids_shuffle = torch.argsort(noise, dim=1)
         ids_restore = torch.argsort(ids_shuffle, dim=1)
         
-        # マスクを生成
+        # マスク
         ids_keep = ids_shuffle[:, :len_keep]
         x_masked = torch.gather(x, dim=1, index=ids_keep.unsqueeze(-1).repeat(1, 1, D))
         
-        # バイナリマスクを生成
+        # マスクの生成（1がマスク，0が保持）
         mask = torch.ones([N, L], device=x.device)
         mask[:, :len_keep] = 0
         mask = torch.gather(mask, dim=1, index=ids_restore)
@@ -251,32 +230,34 @@ class MaskedAutoencoderViT(nn.Module):
         """エンコーダーの順伝播
         
         Args:
-            x (torch.Tensor): 入力画像 [N, 3, H, W]
+            x (torch.Tensor): 入力テンソル [B, C, H, W]
             mask_ratio (float): マスク率
             
         Returns:
-            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-                - エンコードされたトークン
-                - マスク
-                - 復元用のインデックス
+            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: エンコードされたテンソル，マスク，インデックス
         """
         # パッチ埋め込み
         x = self.patch_embed(x)
         
-        # 位置埋め込みを追加（CLSトークンなし）
+        # 位置埋め込みの追加
         x = x + self.pos_embed[:, 1:, :]
         
-        # ランダムマスキング
+        # マスキング
         x, mask, ids_restore = self.random_masking(x, mask_ratio)
         
-        # CLSトークンを追加
+        # CLSトークンの追加
         cls_token = self.cls_token + self.pos_embed[:, :1, :]
         cls_tokens = cls_token.expand(x.shape[0], -1, -1)
         x = torch.cat((cls_tokens, x), dim=1)
         
-        # Transformerブロックで処理
-        for blk in self.blocks:
-            x = blk(x)
+        # Transformerブロック
+        if self.use_checkpoint:
+            for blk in self.blocks:
+                x = checkpoint(blk, x)
+        else:
+            for blk in self.blocks:
+                x = blk(x)
+        
         x = self.norm(x)
         
         return x, mask, ids_restore
@@ -285,30 +266,35 @@ class MaskedAutoencoderViT(nn.Module):
         """デコーダーの順伝播
         
         Args:
-            x (torch.Tensor): エンコードされたトークン
-            ids_restore (torch.Tensor): 復元用のインデックス
+            x (torch.Tensor): エンコードされたテンソル [B, L, D]
+            ids_restore (torch.Tensor): 復元用インデックス [B, L]
             
         Returns:
-            torch.Tensor: 予測結果
+            torch.Tensor: デコードされたテンソル [B, L, p*p*C]
         """
-        # デコーダーの埋め込み
+        # 埋め込み層
         x = self.decoder_embed(x)
         
-        # マスクトークンを追加
-        mask_tokens = self.mask_token.repeat(x.shape[0], ids_restore.shape[1] + 1 - x.shape[1], 1)
-        x_ = torch.cat([x[:, 1:, :], mask_tokens], dim=1)  # CLSトークンなし
-        x_ = torch.gather(x_, dim=1, index=ids_restore.unsqueeze(-1).repeat(1, 1, x.shape[2]))  # シャッフルを戻す
-        x = torch.cat([x[:, :1, :], x_], dim=1)  # CLSトークンを追加
+        # マスクトークンの追加
+        mask_tokens = self.mask_token.expand(x.shape[0], ids_restore.shape[1] + 1 - x.shape[1], -1)
+        x_ = torch.cat([x[:, 1:], mask_tokens], dim=1)
+        x_ = torch.gather(x_, dim=1, index=ids_restore.unsqueeze(-1).repeat(1, 1, x.shape[2]))
+        x = torch.cat([x[:, :1], x_], dim=1)
         
-        # 位置埋め込みを追加
+        # 位置埋め込みの追加
         x = x + self.decoder_pos_embed
         
-        # Transformerブロックで処理
-        for blk in self.decoder_blocks:
-            x = blk(x)
+        # Transformerブロック
+        if self.use_checkpoint:
+            for blk in self.decoder_blocks:
+                x = checkpoint(blk, x)
+        else:
+            for blk in self.decoder_blocks:
+                x = blk(x)
+        
         x = self.decoder_norm(x)
         
-        # 予測
+        # 予測層
         x = self.decoder_pred(x)
         
         # CLSトークンを削除
@@ -316,20 +302,22 @@ class MaskedAutoencoderViT(nn.Module):
         
         return x
         
-    def forward(self, imgs: torch.Tensor, mask_ratio: float = 0.75) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor, mask_ratio: float = 0.75) -> Tuple[torch.Tensor, torch.Tensor]:
         """順伝播
         
         Args:
-            imgs (torch.Tensor): 入力画像 [N, 3, H, W]
+            x (torch.Tensor): 入力テンソル [B, C, H, W]
             mask_ratio (float): マスク率
             
         Returns:
-            Tuple[torch.Tensor, torch.Tensor]:
-                - 予測結果
-                - マスク
+            Tuple[torch.Tensor, torch.Tensor]: 予測結果，マスク
         """
-        latent, mask, ids_restore = self.forward_encoder(imgs, mask_ratio)
-        pred = self.forward_decoder(latent, ids_restore)  # [N, L, p*p*3]
+        # エンコーダー
+        latent, mask, ids_restore = self.forward_encoder(x, mask_ratio)
+        
+        # デコーダー
+        pred = self.forward_decoder(latent, ids_restore)
+        
         return pred, mask
 
 def mae_vit_base_patch16_dec512d8b(**kwargs):
@@ -412,7 +400,7 @@ def get_2d_sincos_pos_embed(embed_dim: int, grid_size: int, cls_token: bool = Fa
     Args:
         embed_dim (int): 埋め込み次元
         grid_size (int): グリッドサイズ
-        cls_token (bool): CLSトークンを使用するかどうか
+        cls_token (bool): CLSトークンを含めるかどうか
         
     Returns:
         np.ndarray: 位置埋め込み
@@ -427,7 +415,6 @@ def get_2d_sincos_pos_embed(embed_dim: int, grid_size: int, cls_token: bool = Fa
     
     if cls_token:
         pos_embed = np.concatenate([np.zeros([1, embed_dim]), pos_embed], axis=0)
-    
     return pos_embed
 
 def get_2d_sincos_pos_embed_from_grid(embed_dim: int, grid: np.ndarray) -> np.ndarray:
@@ -451,7 +438,6 @@ def get_2d_sincos_pos_embed_from_grid(embed_dim: int, grid: np.ndarray) -> np.nd
     emb_w = get_1d_sincos_pos_embed_from_grid(embed_dim // 2, grid[1])
     
     emb = np.concatenate([emb_h, emb_w], axis=1)
-    
     return emb
 
 def get_1d_sincos_pos_embed_from_grid(embed_dim: int, pos: np.ndarray) -> np.ndarray:
@@ -477,5 +463,4 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim: int, pos: np.ndarray) -> np.nda
     emb_cos = np.cos(out)
     
     emb = np.concatenate([emb_sin, emb_cos], axis=1)
-    
     return emb 
