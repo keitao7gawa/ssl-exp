@@ -321,8 +321,8 @@ class MoCoTrainer(BaseTrainer):
             num_workers=self.config.training.num_workers,
             pin_memory=self.config.training.pin_memory,
             drop_last=self.config.training.drop_last,
-            persistent_workers=True,
-            multiprocessing_context='fork'
+            persistent_workers=self.config.training.persistent_workers,
+            multiprocessing_context=self.config.training.multiprocessing_context
         )
         
     def _setup_model(self) -> None:
@@ -488,8 +488,8 @@ class MAETrainer(BaseTrainer):
             num_workers=self.config.training.num_workers,
             pin_memory=self.config.training.pin_memory,
             drop_last=self.config.training.drop_last,
-            persistent_workers=True,
-            multiprocessing_context='fork'
+            persistent_workers=self.config.training.persistent_workers,
+            multiprocessing_context=self.config.training.multiprocessing_context
         )
         
     def _setup_model(self) -> None:
