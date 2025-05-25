@@ -160,7 +160,8 @@ class HFD100(Dataset):
             image = self.h5_files[h5_name][step_name]['hs'][image_name][()]
             target = self.h5_files[h5_name][step_name]['target'][image_name][()]
         except OSError:
-            self.h5_files[h5_name].close()
+            if h5_name in self.h5_files:
+                self.h5_files[h5_name].close()
             self.h5_files[h5_name] = h5py.File(os.path.join(self.dir_path, h5_name), "r")
             image = self.h5_files[h5_name][step_name]['hs'][image_name][()]
             target = self.h5_files[h5_name][step_name]['target'][image_name][()]

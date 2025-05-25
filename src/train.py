@@ -507,7 +507,6 @@ class MAETrainer(BaseTrainer):
             decoder_num_heads=self.config.model.decoder_num_heads,
             mlp_ratio=self.config.model.mlp_ratio,
             norm_layer=nn.LayerNorm,
-            norm_pix_loss=self.config.model.norm_pix_loss
         )
         
         # ロガーの設定

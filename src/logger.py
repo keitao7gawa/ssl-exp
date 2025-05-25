@@ -84,7 +84,13 @@ class BaseLogger:
         
     def close(self) -> None:
         """ロガーを閉じる"""
-        self.csv_file_handle.close()
+        try:
+            if hasattr(self, "csv_file_handle"):
+                self.csv_file_handle.flush()
+                self.csv_file_handle.close()
+        except Exception as e:
+            print(f"ロガーの閉じる中でエラーが発生しました: {e}")
+            raise
         
     def __del__(self) -> None:
         """デストラクタ"""
