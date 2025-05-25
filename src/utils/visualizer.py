@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple, Union
+from PIL import Image
 
 class ExperimentVisualizer:
     """実験結果を可視化するクラス
@@ -239,3 +240,36 @@ class ExperimentVisualizer:
         plt.tight_layout()
         
         self._save_or_show(save, save_name, 'experiment_comparison.png')
+
+def create_hs_gif(
+        hs_data: np.ndarray,
+        max_value: float,
+        save_path: str,
+        duration: int = 100,
+        cmap: str = "gray"
+) -> None:
+    """HSデータをGIFに変換します
+    
+    Args:
+        hs_data (np.ndarray): HSデータ
+        max_value (float): 最大値
+        save_path (str): 保存先のパス
+        duration (int): フレーム間隔
+        cmap (str): カラーマップ
+    """
+    normalized_hs_data: np.ndarray = np.clip(hs_data / max_value, 0, 1)
+
+    frames = []
+    for band_idx in range(hs_data.shape[2]):
+        band_image = normalized_hs_data[:, :, band_idx]
+        band_image = (band_image * 255).astype(np.uint8)
+        band_image = Image.fromarray(band_image)
+        frames.append(band_image)
+
+    frames[0].save(
+        save_path,
+        save_all=True,
+        append_images=frames[1:],
+        duration=duration,
+        loop=0
+    )
