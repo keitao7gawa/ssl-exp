@@ -26,8 +26,8 @@ dataset_std: dict[str, any] = {
 import torch
 class DatasetStandardization:
     def __init__(self, dataset_name: str, band_type: str) -> None:
-        self.mean = torch.tensor(dataset_mean[dataset_name][band_type])
-        self.std = torch.tensor(dataset_std[dataset_name][band_type])
+        self.mean: torch.Tensor = torch.tensor(dataset_mean[dataset_name][band_type])
+        self.std: torch.Tensor = torch.tensor(dataset_std[dataset_name][band_type])
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -42,8 +42,8 @@ class DatasetStandardization:
 
 class DatasetUnstandardization:
     def __init__(self, dataset_name: str, band_type: str) -> None:
-        self.mean = torch.tensor(dataset_mean[dataset_name][band_type])
-        self.std = torch.tensor(dataset_std[dataset_name][band_type])
+        self.mean: torch.Tensor = torch.tensor(dataset_mean[dataset_name][band_type])
+        self.std: torch.Tensor = torch.tensor(dataset_std[dataset_name][band_type])
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
         """
