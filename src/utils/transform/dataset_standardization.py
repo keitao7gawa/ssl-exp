@@ -39,3 +39,18 @@ class DatasetStandardization:
         """
         # x:(C, H, W), mean: (C), std: (C)
         return (x - self.mean.view(-1, 1, 1)) / self.std.view(-1, 1, 1)
+
+class DatasetUnstandardization:
+    def __init__(self, dataset_name: str, band_type: str) -> None:
+        self.mean = torch.tensor(dataset_mean[dataset_name][band_type])
+        self.std = torch.tensor(dataset_std[dataset_name][band_type])
+
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        データセットの非標準化
+        Args:
+            x: (C, H, W)
+        Returns:
+            (C, H, W)
+        """
+        return x * self.std.view(-1, 1, 1) + self.mean.view(-1, 1, 1)
