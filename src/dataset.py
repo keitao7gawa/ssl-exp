@@ -78,7 +78,8 @@ class HFD100(Dataset):
         dir_path (str): データセットのディレクトリパス
         train_transform (transforms.Compose): 訓練データの変換
         val_transform (transforms.Compose): 検証データの変換
-        all_flag (bool): 全てのデータを使用するかどうか
+        use_all (bool): 全てのデータを使用するかどうか
+        standardization_params (Dict[str, Any]): 標準化のパラメータ
     """
     def __init__(self, train: bool,
                  dir_path: str,
@@ -86,7 +87,8 @@ class HFD100(Dataset):
                  val_transform: Dict[str, Any] = {"name": "None"},
                  target_transform: Dict[str, Any] = {"name": "None"},
                  data_types = None,
-                 use_all: bool = False):
+                 use_all: bool = False,
+                 standardization_params: Dict[str, Any] = None):
         
         self.dir_path = dir_path
         self.step = "train" if train else "test"
@@ -113,6 +115,11 @@ class HFD100(Dataset):
                 self.target_transform = transform_class()
 
         self.use_all = use_all
+        if standardization_params is not None:
+            standardization_params["name"] = "DatasetStandardization"
+            self.standardization_transform = TRANSFORM_MAP[standardization_params["name"]](**standardization_params["params"])
+        else:
+            self.standardization_transform = None
         
         data_types = data_types if isinstance(data_types, list) else [data_types]
         assert all([data_type in ["scene", "flower", "leaf"] for data_type in data_types]), "data_types must be one of ['scene', 'flower', 'leaf']"
@@ -176,6 +183,9 @@ class HFD100(Dataset):
         
         if self.target_transform is not None:
             target = self.target_transform(target)
+        
+        if self.standardization_transform is not None:
+            image = self.standardization_transform(image)
         return image, target
     
 def __del__(self):

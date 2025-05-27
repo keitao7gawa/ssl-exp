@@ -6,6 +6,7 @@ from .transform.hs_transforms import HSSimCLRTransform, HSMoCoTransform, HSMAETr
 from .transform.hs_rgb_transforms import HStoRGBSimCLRTransform, HStoRGBMAETransform
 from .transform.hs_to_rgb import HStoRGB
 from torchvision.transforms import RandomResizedCrop
+from .transform.dataset_standardization import DatasetStandardization
 TRANSFORM_MAP: Dict[str, Any] = {
     "SimCLRTransform": SimCLRTransform,
     "CutOut": CutOut,
@@ -17,4 +18,5 @@ TRANSFORM_MAP: Dict[str, Any] = {
     "RandomResizedCrop": RandomResizedCrop,
     "HSMAETransform": HSMAETransform,
     "HStoRGBMAETransform": HStoRGBMAETransform,
+    "DatasetStandardization": DatasetStandardization,
 }
